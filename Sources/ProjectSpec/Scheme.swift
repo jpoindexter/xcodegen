@@ -927,12 +927,20 @@ extension Scheme.Build: JSONObjectConvertible {
         for (targetRepr, possibleBuildTypes) in targetDictionary {
             let buildTypes: [BuildType]
             if let string = possibleBuildTypes as? String {
-                switch string {
-                case "all": buildTypes = BuildType.all
-                case "none": buildTypes = []
-                case "testing": buildTypes = [.testing, .analyzing]
-                case "indexing": buildTypes = [.testing, .analyzing, .archiving]
-                default: buildTypes = BuildType.all
+                let normalized = string.lowercased()
+                switch normalized {
+                case "all":
+                    buildTypes = BuildType.all
+                case "none":
+                    buildTypes = []
+                case "testing":
+                    buildTypes = [.testing, .analyzing]
+                case "indexing":
+                    buildTypes = [.testing, .analyzing, .archiving]
+                case "test", "run", "running", "profile", "profiling", "analyze", "analyzing", "archive", "archiving":
+                    buildTypes = BuildType.from(jsonValue: normalized).map { [$0] } ?? BuildType.all
+                default:
+                    buildTypes = BuildType.all
                 }
             } else if let enabledDictionary = possibleBuildTypes as? [String: Bool] {
                 buildTypes = enabledDictionary.filter { $0.value }.compactMap { BuildType.from(jsonValue: $0.key) }

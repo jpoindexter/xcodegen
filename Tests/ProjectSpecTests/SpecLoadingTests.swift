@@ -1010,6 +1010,8 @@ class SpecLoadingTests: XCTestCase {
                             "Target5": ["testing": false],
                             "Target6": ["test", "analyze"],
                             "ExternalProject/Target7": ["run"],
+                            "Target8": "test",
+                            "Target9": "run",
                         ],
                         "preActions": [
                             [
@@ -1066,6 +1068,8 @@ class SpecLoadingTests: XCTestCase {
                     Scheme.BuildTarget(target: "Target5", buildTypes: []),
                     Scheme.BuildTarget(target: "Target6", buildTypes: [.testing, .analyzing]),
                     Scheme.BuildTarget(target: "ExternalProject/Target7", buildTypes: [.running]),
+                    Scheme.BuildTarget(target: "Target8", buildTypes: [.testing]),
+                    Scheme.BuildTarget(target: "Target9", buildTypes: [.running]),
                 ]
                 try expect(scheme.name) == "Scheme"
                 try expect(scheme.build.targets) == expectedTargets
