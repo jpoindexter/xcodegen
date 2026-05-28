@@ -1798,6 +1798,24 @@ class ProjectGeneratorTests: XCTestCase {
                 try expect(file.product?.productName) == "XcodeGen"
             }
 
+            $0.it("deduplicates local swift packages with alias names") {
+                let project = Project(
+                    name: "test",
+                    targets: [Target(name: "MyApp", type: .application, platform: .iOS)],
+                    packages: [
+                        "FooFeature": .local(path: "../FooFeature", group: nil, excludeFromProject: false),
+                        "FooAlias": .local(path: "../FooFeature", group: nil, excludeFromProject: false),
+                    ]
+                )
+
+                let pbxProject = try project.generatePbxProj(specValidate: false)
+
+                try expect(pbxProject.rootObject?.localPackages.count) == 1
+
+                let localPackageFiles = pbxProject.fileReferences.filter { $0.path == "../FooFeature" }
+                try expect(localPackageFiles.count) == 1
+            }
+
             $0.it("generates info.plist") {
                 let plist = Plist(path: "Info.plist", attributes: ["UISupportedInterfaceOrientations": ["UIInterfaceOrientationPortrait", "UIInterfaceOrientationLandscapeLeft"]])
                 let tempPath = Path.temporary + "info"
@@ -2100,6 +2118,32 @@ class ProjectGeneratorTests: XCTestCase {
                     for plist in plists {
                         try expect(plist) == "TestProject/App_iOS/Info.plist"
                     }
+                }
+
+                $0.it("generates local package reference paths relative to destination") {
+                    let projectBasePath = fixturePath + "paths_test/relative_local_package"
+                    let destinationPath = fixturePath
+                    let app = Target(
+                        name: "App",
+                        type: .application,
+                        platform: .iOS,
+                        dependencies: [
+                            Dependency(type: .package(products: ["LocalPackage"]), reference: "LocalPackage"),
+                        ]
+                    )
+                    let project = Project(
+                        basePath: projectBasePath,
+                        name: "test",
+                        targets: [app],
+                        packages: [
+                            "LocalPackage": .local(path: "LocalPackage", group: nil, excludeFromProject: false),
+                        ]
+                    )
+                    let generator = ProjectGenerator(project: project)
+                    let generatedProject = try generator.generateXcodeProject(in: destinationPath, userName: "someUser")
+
+                    let localPackageReference = try unwrap(generatedProject.pbxproj.rootObject?.localPackages.first)
+                    try expect(localPackageReference.relativePath) == "paths_test/relative_local_package/LocalPackage"
                 }
             }
 
