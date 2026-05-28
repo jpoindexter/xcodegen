@@ -16,6 +16,7 @@ public enum SpecParsingError: Error, CustomStringConvertible {
     case unknownBreakpointActionConveyanceType(String)
     case unknownBreakpointActionSoundName(String)
     case invalidConfigsMappingFormat(keys: Set<String>)
+    case unknownProjectKeys(keys: Set<String>)
 
     public var description: String {
         switch self {
@@ -49,6 +50,8 @@ public enum SpecParsingError: Error, CustomStringConvertible {
             return "Unknown Breakpoint Action sound name: \(name)"
         case let .invalidConfigsMappingFormat(keys):
             return "Invalid format: The value for \"\(keys.sorted().joined(separator: ", "))\" in `configs` must be mapping format"
+        case let .unknownProjectKeys(keys):
+            return "Unknown project key(s): \(keys.sorted().joined(separator: ", "))"
         }
     }
 }

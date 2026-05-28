@@ -134,6 +134,7 @@ Note that target names can also be changed by adding a `name` property to a targ
 - [ ] **tabWidth**: **Int** - If this is specified, the Xcode project will override the user's setting for indent width in number of spaces.
 - [ ] **xcodeVersion**: **String** - The version of Xcode. This defaults to the latest version periodically. You can specify it in the format `0910` or `9.1`
 - [ ] **projectFormat**: **String** - The version of Xcode project. By default this is set to `xcode16_0`
+  - `xcode26_3`: Xcode 26.3
   - `xcode16_3`: Xcode 16.3
   - `xcode16_0`: Xcode 16.0
   - `xcode15_3`: Xcode 15.3
@@ -370,6 +371,7 @@ Settings are merged in the following order: `groups`, `base`, `configs` (simple 
 - [x] **platform**: **[Platform](#platform)** - Platform of the target
 - [ ] **supportedDestinations**: **[[Supported Destinations](#supported-destinations)]** - List of supported platform destinations for the target.
 - [ ] **deploymentTarget**: **String** - The deployment target (eg `9.2`). If this is not specified the value from the project set in [Options](#options)`.deploymentTarget.PLATFORM` will be used.
+  - When using [Supported Destinations](#supported-destinations), this can also be a map of platform versions such as `{ iOS: 18.0, macOS: 15.0 }`.
 - [ ] **sources**: **[Sources](#sources)** - Source directories of the target
 - [ ] **configFiles**: **[Config Files](#config-files)** - `.xcconfig` files per config
 - [ ] **settings**: **[Settings](#settings)** - Target specific build settings. Default platform and product type settings will be applied first before any custom settings defined here. Other context dependant settings will be set automatically as well:
@@ -1019,6 +1021,10 @@ Schemes allows for more control than the convenience [Target Scheme](#target-sch
 - [ ] **runPostActionsOnFailure**: **Bool** - Flag to determine if Xcode should run post scripts despite failure build. By default this is `false` if not set.
 - `true`: Run post scripts even if build is failed
 - `false`: Only run post scripts if build success
+- [ ] **buildArchitectures**: **String** - Override architectures setting for scheme builds. By default this is `useTargetSettings` if not set.
+  - `matchRunDestination`: Match Run Destination
+  - `universal`: Build All Architectures
+  - `useTargetSettings`: Use target `ARCHS` settings
 
 
 ```yaml
@@ -1027,6 +1033,7 @@ targets:
   FooLib/FooTarget: [test, run]
 parallelizeBuild: true
 buildImplicitDependencies: true
+buildArchitectures: matchRunDestination
 ```
 
 ### Common Build Action options

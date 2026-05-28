@@ -8,7 +8,16 @@ extension Project {
     }
 
     public var projectFormat: ProjectFormat {
-        options.projectFormat.flatMap(ProjectFormat.init) ?? .default
+        if let explicitProjectFormat = options.projectFormat.flatMap(ProjectFormat.init(rawValue:)) {
+            return explicitProjectFormat
+        }
+
+        if let xcodeVersion = options.xcodeVersion,
+           let inferredProjectFormat = ProjectFormat(fromXcodeVersion: xcodeVersion) {
+            return inferredProjectFormat
+        }
+
+        return .default
     }
 
     var schemeVersion: String {
@@ -29,6 +38,32 @@ extension Project {
 
     var minimizedProjectReferenceProxies: Int {
         1
+    }
+}
+
+private extension ProjectFormat {
+    init?(fromXcodeVersion version: String) {
+        let normalizedVersion = XCodeVersion.parse(version)
+        guard let numericVersion = Int(normalizedVersion) else {
+            return nil
+        }
+
+        switch numericVersion {
+        case 2630...:
+            self = .xcode26_3
+        case 1630...:
+            self = .xcode16_3
+        case 1600...:
+            self = .xcode16_0
+        case 1530...:
+            self = .xcode15_3
+        case 1500...:
+            self = .xcode15_0
+        case 1400...:
+            self = .xcode14_0
+        default:
+            return nil
+        }
     }
 }
 

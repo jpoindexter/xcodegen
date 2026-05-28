@@ -122,12 +122,15 @@ extension Project {
                 }
 
                 for testTarget in scheme.testTargets {
-                    if getTarget(testTarget.name) == nil {
-                        // For test case of local Swift Package
-                        if case .package(let name) = testTarget.targetReference.location, getPackage(name) != nil {
-                            continue
-                        }
+                    switch testTarget.targetReference.location {
+                    case .local where getTarget(testTarget.name) == nil:
                         errors.append(.invalidTargetSchemeTest(target: target.name, testTarget: testTarget.name))
+                    case .project(let project) where getProjectReference(project) == nil:
+                        errors.append(.invalidTargetSchemeTest(target: target.name, testTarget: testTarget.name))
+                    case .package(let package) where getPackage(package) == nil:
+                        errors.append(.invalidTargetSchemeTest(target: target.name, testTarget: testTarget.name))
+                    case .local, .project, .package:
+                        break
                     }
                 }
 

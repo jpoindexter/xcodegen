@@ -165,7 +165,7 @@ If you want to pass any required arguments when running in Xcode, you can edit t
 If XcodeGen doesn't meet your needs try these great alternatives:
 - [Tuist](https://github.com/tuist/tuist)
 - [Xcake](https://github.com/igor-makarov/xcake)
-- [struct](https://github.com/workshop/struct)
+- struct
 
 ## Attributions
 This tool is powered by:
@@ -179,7 +179,7 @@ This tool is powered by:
 
 Inspiration for this tool came from:
 
-- [struct](https://github.com/workshop/struct)
+- struct
 - [Xcake](https://github.com/igor-makarov/xcake)
 - [CocoaPods Xcodeproj](https://github.com/CocoaPods/Xcodeproj)
 

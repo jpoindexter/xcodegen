@@ -88,7 +88,22 @@ extension Project {
         }
         
         // apply custom platform version
-        if let version = target.deploymentTarget {
+        if let versions = target.deploymentTargets {
+            if !specSupportedDestinations.isEmpty {
+                for supportedDestination in specSupportedDestinations {
+                    if let platform = Platform(rawValue: supportedDestination.rawValue),
+                       let version = versions.version(for: platform) {
+                        buildSettings[platform.deploymentTargetSetting] = .string(version.deploymentTarget)
+                    }
+                }
+            } else {
+                for platform in Platform.allCases where platform != .auto {
+                    if let version = versions.version(for: platform) {
+                        buildSettings[platform.deploymentTargetSetting] = .string(version.deploymentTarget)
+                    }
+                }
+            }
+        } else if let version = target.deploymentTarget {
             if !specSupportedDestinations.isEmpty {
                 for supportedDestination in specSupportedDestinations {
                     if let platform = Platform(rawValue: supportedDestination.rawValue) {
@@ -110,6 +125,11 @@ extension Project {
         }
 
         buildSettings += getBuildSettings(settings: target.settings, config: config)
+        applySwift61DefaultsIfNeeded(
+            to: &buildSettings,
+            target: target,
+            config: config
+        )
 
         return buildSettings
     }
@@ -196,6 +216,58 @@ extension Project {
             configFileSettings[configFilePath.string] = .cached(settings)
             return settings
         }
+    }
+
+    private func applySwift61DefaultsIfNeeded(to buildSettings: inout BuildSettings, target: Target, config: Config) {
+        guard let swiftVersion = buildSettings["SWIFT_VERSION"]?.stringValue,
+            swiftVersionRequiresSwift61Defaults(swiftVersion) else {
+            return
+        }
+
+        let settingDefaults: [String: String] = [
+            "SWIFT_UPCOMING_FEATURE_6_0": "YES",
+            "SWIFT_STRICT_CONCURRENCY_DEFAULT": "complete",
+        ]
+
+        for (setting, value) in settingDefaults where buildSettings[setting] == nil {
+            if !hasSettingInConfigFiles(setting, target: target, config: config) {
+                buildSettings[setting] = .string(value)
+            }
+        }
+    }
+
+    private func hasSettingInConfigFiles(_ setting: String, target: Target, config: Config) -> Bool {
+        if let targetConfigPath = target.configFiles[config.name],
+            loadConfigFileBuildSettings(path: targetConfigPath)?[setting] != nil {
+            return true
+        }
+
+        if let projectConfigPath = configFiles[config.name],
+            loadConfigFileBuildSettings(path: projectConfigPath)?[setting] != nil {
+            return true
+        }
+
+        return false
+    }
+
+    private func swiftVersionRequiresSwift61Defaults(_ swiftVersion: String) -> Bool {
+        let version = swiftVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+        let components = version.split(separator: ".", omittingEmptySubsequences: false)
+
+        guard let majorComponent = components.first, let major = Int(majorComponent) else {
+            return false
+        }
+
+        if major > 6 {
+            return true
+        }
+
+        guard major == 6 else {
+            return false
+        }
+
+        let minor = components.count > 1 ? Int(components[1]) ?? 0 : 0
+        return minor >= 1
     }
 }
 

@@ -84,6 +84,19 @@ class SourceGeneratorTests: XCTestCase {
                 try pbxProj.expectFile(paths: ["Sources", "A", "C2.0", "c.swift"], buildPhase: .sources)
             }
 
+            $0.it("treats .icon directories as single resources") {
+                _ = try createFile(at: Path("Sources/AppIcon.icon/icon.json"), content: "{}")
+                _ = try createFile(at: Path("Sources/AppIcon.icon/sample.svg"), content: "<svg/>")
+
+                let target = Target(name: "Test", type: .application, platform: .iOS, sources: ["Sources"])
+                let project = Project(basePath: directoryPath, name: "Test", targets: [target])
+
+                let pbxProj = try project.generatePbxProj()
+                try pbxProj.expectFile(paths: ["Sources", "AppIcon.icon"], buildPhase: .resources)
+                try pbxProj.expectFileMissing(paths: ["Sources", "AppIcon.icon", "icon.json"])
+                try pbxProj.expectFileMissing(paths: ["Sources", "AppIcon.icon", "sample.svg"])
+            }
+
             $0.it("generates synced folder") {
                 let directories = """
                 Sources:
@@ -153,6 +166,31 @@ class SourceGeneratorTests: XCTestCase {
                 let syncedFolder = try unwrap(nestedSyncedFolders.first)
 
                 try expect(syncedFolder.path) == "Child"
+                try expect([syncedFolder]) == pbxProj.nativeTargets.first?.fileSystemSynchronizedGroups
+            }
+
+            $0.it("nests synced folder under existing fileGroups path") {
+                let directories = """
+                Modules:
+                  Example:
+                    Sources:
+                      - main.swift
+                """
+                try createDirectories(directories)
+
+                let target = Target(name: "Test", type: .application, platform: .iOS, sources: [.init(path: "Modules/Example/Sources", type: .syncedFolder)])
+                let project = Project(basePath: directoryPath, name: "Test", targets: [target], fileGroups: ["Modules"])
+
+                let pbxProj = try project.generatePbxProj()
+                let mainGroup = try pbxProj.getMainGroup()
+
+                try expect(mainGroup.children.compactMap { $0 as? PBXFileSystemSynchronizedRootGroup }.count) == 0
+
+                let modulesGroup = try unwrap(mainGroup.children.compactMap({ $0 as? PBXGroup }).first(where: { $0.nameOrPath == "Modules" }))
+                let exampleGroup = try unwrap(modulesGroup.children.compactMap({ $0 as? PBXGroup }).first(where: { $0.nameOrPath == "Example" }))
+                let syncedFolder = try unwrap(exampleGroup.children.compactMap({ $0 as? PBXFileSystemSynchronizedRootGroup }).first)
+
+                try expect(syncedFolder.path) == "Sources"
                 try expect([syncedFolder]) == pbxProj.nativeTargets.first?.fileSystemSynchronizedGroups
             }
 
@@ -1012,6 +1050,32 @@ class SourceGeneratorTests: XCTestCase {
                 try pbxProj.expectFile(paths: ["CustomGroup2", "Sources/B", "C", "c.swift"], names: ["CustomGroup2", "B", "C", "c.swift"], buildPhase: .sources)
             }
 
+            $0.it("preserves source name when custom group is set") {
+                let directories = """
+                source:
+                  folder:
+                    - file.swift
+                """
+                try createDirectories(directories)
+
+                let target = Target(name: "Test", type: .application, platform: .iOS, sources: [
+                    TargetSource(
+                        path: "source/folder",
+                        name: "ReplacementName",
+                        group: "another/source/folder",
+                        createIntermediateGroups: false
+                    ),
+                ])
+                let project = Project(basePath: directoryPath, name: "Test", targets: [target])
+
+                let pbxProj = try project.generatePbxProj()
+                try pbxProj.expectFile(
+                    paths: ["another", "source", "folder", "source/folder", "file.swift"],
+                    names: ["another", "source", "folder", "ReplacementName", "file.swift"],
+                    buildPhase: .sources
+                )
+            }
+
             $0.it("generates folder references") {
                 let directories = """
                 Sources:
@@ -1052,6 +1116,22 @@ class SourceGeneratorTests: XCTestCase {
 
                 let pbxProj = try project.generatePbxProj()
                 try pbxProj.expectFile(paths: ["Sources", "Sources/A"], names: ["Sources", "A"], buildPhase: .resources)
+            }
+
+            $0.it("generates absolute file references with createIntermediateGroups") {
+                let sourcePath = Path("/usr/bin/xcrun")
+                let target = Target(name: "Test", type: .application, platform: .iOS, sources: [
+                    TargetSource(path: sourcePath.string),
+                ])
+                let project = Project(
+                    basePath: directoryPath,
+                    name: "Test",
+                    targets: [target],
+                    options: .init(createIntermediateGroups: true)
+                )
+
+                let pbxProj = try project.generatePbxProj()
+                try expect(pbxProj.fileReferences.contains { $0.path == "xcrun" }) == true
             }
 
             $0.it("adds files to correct build phase") {

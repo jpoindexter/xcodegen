@@ -1,3 +1,4 @@
+import Foundation
 import PathKit
 import ProjectSpec
 import Spectre
@@ -151,6 +152,37 @@ class ProjectSpecTests: XCTestCase {
                 try expectValidationError(project, .invalidLocalPackage("invalidLocalPackage"))
                 try expectValidationError(project, .invalidSettingsGroup("invalidSettingGroupSettingGroup"))
                 try expectValidationError(project, .invalidBuildSettingConfig("invalidSettingGroupConfig"))
+            }
+
+            $0.it("excludes default ignored files from tracked files") {
+                let temporaryDir = Path(NSTemporaryDirectory()) + UUID().uuidString
+                let sourceDir = temporaryDir + "Sources"
+                try sourceDir.mkpath()
+                defer {
+                    try? temporaryDir.delete()
+                }
+
+                try (sourceDir + "Source.swift").write("struct Source {}")
+                try (sourceDir + ".DS_Store").write("metadata")
+                try (sourceDir + "Source.swift.orig").write("backup")
+
+                let project = Project(
+                    basePath: temporaryDir,
+                    name: "CacheTracking",
+                    targets: [
+                        Target(
+                            name: "CacheTracking",
+                            type: .application,
+                            platform: .iOS,
+                            sources: [TargetSource(path: "Sources")]
+                        ),
+                    ]
+                )
+
+                let trackedFileNames = project.allTrackedFiles.map(\.lastComponent)
+                try expect(trackedFileNames.contains("Source.swift")) == true
+                try expect(trackedFileNames.contains(".DS_Store")) == false
+                try expect(trackedFileNames.contains("Source.swift.orig")) == false
             }
 
             $0.it("fails with duplicate dependencies") {
@@ -387,6 +419,42 @@ class ProjectSpecTests: XCTestCase {
                 try expectValidationError(project, .invalidProjectReference(scheme: "scheme1", reference: "SubProject"))
             }
 
+            $0.it("allows custom configuration names in settings and schemes") {
+                var project = baseProject
+                project.configs = [
+                    Config(name: "Debug", type: .debug),
+                    Config(name: "Enterprise", type: .release),
+                    Config(name: "AppStore", type: .release),
+                ]
+                project.targets = [
+                    Target(
+                        name: "TestApp",
+                        type: .application,
+                        platform: .iOS,
+                        settings: Settings(
+                            configSettings: [
+                                "Enterprise": [
+                                    "SWIFT_VERSION": "5.0",
+                                ],
+                            ]
+                        )
+                    ),
+                ]
+                project.schemes = [
+                    Scheme(
+                        name: "Enterprise",
+                        build: .init(targets: [.init(target: "TestApp")]),
+                        run: .init(config: "Enterprise"),
+                        test: .init(config: "Enterprise"),
+                        profile: .init(config: "Enterprise"),
+                        analyze: .init(config: "Enterprise"),
+                        archive: .init(config: "Enterprise")
+                    ),
+                ]
+
+                try expectValidationErrors(project, [])
+            }
+
             $0.it("fails with invalid project reference in scheme") {
                 var project = baseProject
                 project.schemes = [Scheme(
@@ -414,6 +482,28 @@ class ProjectSpecTests: XCTestCase {
                     ),
                 ]
                 try expectValidationError(project, .invalidTargetDependency(target: "target1", dependency: "invalidProjectRef/target2"))
+            }
+
+            $0.it("allows target scheme test target from project reference") {
+                var project = baseProject
+                let externalProjectPath = fixturePath + "TestProject/AnotherProject/AnotherProject.xcodeproj"
+                project.projectReferences = [
+                    ProjectReference(name: "Keychain", path: externalProjectPath.string),
+                ]
+                project.targets = [
+                    Target(
+                        name: "target1",
+                        type: .application,
+                        platform: .iOS,
+                        scheme: TargetScheme(
+                            testTargets: [
+                                .init(targetReference: .init(name: "ExternalTarget", location: .project("Keychain"))),
+                            ]
+                        )
+                    ),
+                ]
+
+                try expectNoValidationError(project, .invalidTargetSchemeTest(target: "target1", testTarget: "ExternalTarget"))
             }
 
             $0.it("allows project reference in target dependency") {
@@ -456,6 +546,45 @@ class ProjectSpecTests: XCTestCase {
                 project.settings.buildSettings = ["Debug": "VALUE", "Release": "VALUE"]
 
                 try expectValidationError(project, .invalidPerConfigSettings)
+            }
+
+            $0.it("accepts custom build configurations via configurations alias") {
+                let projectDictionary: [String: Any] = [
+                    "name": "TestApp",
+                    "configurations": [
+                        "Debug": "debug",
+                        "Enterprise": "release",
+                        "AppStore": "release",
+                    ],
+                    "targets": [
+                        "TestApp": [
+                            "type": "application",
+                            "platform": "iOS",
+                            "settings": [
+                                "configs": [
+                                    "Enterprise": [
+                                        "SWIFT_VERSION": "5.0",
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                    "schemes": [
+                        "Enterprise": [
+                            "build": [
+                                "targets": [
+                                    "TestApp": "all",
+                                ],
+                            ],
+                            "archive": [
+                                "config": "Enterprise",
+                            ],
+                        ],
+                    ],
+                ]
+
+                let project = try Project(jsonDictionary: projectDictionary)
+                try project.validate()
             }
 
             $0.it("allows custom scheme for aggregated target") {

@@ -516,6 +516,28 @@ class ProjectGeneratorTests: XCTestCase {
                 try expect(targetConfig1.buildSettings["SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD"]?.boolValue) == false
             }
 
+            $0.it("supportedDestinations applies per-platform deploymentTarget dictionary") {
+                let targetDictionary: [String: Any] = [
+                    "type": "application",
+                    "platform": "auto",
+                    "supportedDestinations": ["macOS", "iOS"],
+                    "deploymentTarget": [
+                        "macOS": "15.0",
+                        "iOS": "18.0",
+                    ],
+                ]
+                let project = try Project(jsonDictionary: [
+                    "name": "test",
+                    "targets": ["Target": targetDictionary],
+                ])
+
+                let pbxProject = try project.generatePbxProj()
+                let targetConfig = try unwrap(pbxProject.nativeTargets.first?.buildConfigurationList?.buildConfigurations.first)
+
+                try expect(targetConfig.buildSettings["MACOSX_DEPLOYMENT_TARGET"]?.stringValue) == "15.0"
+                try expect(targetConfig.buildSettings["IPHONEOS_DEPLOYMENT_TARGET"]?.stringValue) == "18.0"
+            }
+
             $0.it("supportedDestinations respects settingPresets none") {
                 let target = Target(name: "Target", type: .application, platform: .auto, supportedDestinations: [.iOS, .macOS])
                 let options = SpecOptions(settingPresets: .none)
@@ -529,6 +551,44 @@ class ProjectGeneratorTests: XCTestCase {
                 try expect(targetConfig.buildSettings["SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD"]).beNil()
                 try expect(targetConfig.buildSettings["SUPPORTED_PLATFORMS"]).beNil()
                 try expect(targetConfig.buildSettings["TARGETED_DEVICE_FAMILY"]).beNil()
+            }
+
+            $0.it("applies swift 6.1 concurrency defaults") {
+                let target = Target(
+                    name: "Target",
+                    type: .application,
+                    platform: .iOS,
+                    settings: Settings(buildSettings: [
+                        "SWIFT_VERSION": "6.1",
+                    ])
+                )
+                let project = Project(name: "", targets: [target])
+
+                let pbxProject = try project.generatePbxProj()
+                let targetConfig = try unwrap(pbxProject.nativeTargets.first?.buildConfigurationList?.buildConfigurations.first)
+
+                try expect(targetConfig.buildSettings["SWIFT_UPCOMING_FEATURE_6_0"]?.stringValue) == "YES"
+                try expect(targetConfig.buildSettings["SWIFT_STRICT_CONCURRENCY_DEFAULT"]?.stringValue) == "complete"
+            }
+
+            $0.it("does not override explicit swift concurrency settings") {
+                let target = Target(
+                    name: "Target",
+                    type: .application,
+                    platform: .iOS,
+                    settings: Settings(buildSettings: [
+                        "SWIFT_VERSION": "6.1",
+                        "SWIFT_UPCOMING_FEATURE_6_0": "NO",
+                        "SWIFT_STRICT_CONCURRENCY_DEFAULT": "minimal",
+                    ])
+                )
+                let project = Project(name: "", targets: [target])
+
+                let pbxProject = try project.generatePbxProj()
+                let targetConfig = try unwrap(pbxProject.nativeTargets.first?.buildConfigurationList?.buildConfigurations.first)
+
+                try expect(targetConfig.buildSettings["SWIFT_UPCOMING_FEATURE_6_0"]?.stringValue) == "NO"
+                try expect(targetConfig.buildSettings["SWIFT_STRICT_CONCURRENCY_DEFAULT"]?.stringValue) == "minimal"
             }
 
             $0.it("generates dependencies") {
@@ -1776,6 +1836,24 @@ class ProjectGeneratorTests: XCTestCase {
                 try expect(file.product?.productName) == "XcodeGen"
             }
 
+            $0.it("deduplicates local swift packages with alias names") {
+                let project = Project(
+                    name: "test",
+                    targets: [Target(name: "MyApp", type: .application, platform: .iOS)],
+                    packages: [
+                        "FooFeature": .local(path: "../FooFeature", group: nil, excludeFromProject: false),
+                        "FooAlias": .local(path: "../FooFeature", group: nil, excludeFromProject: false),
+                    ]
+                )
+
+                let pbxProject = try project.generatePbxProj(specValidate: false)
+
+                try expect(pbxProject.rootObject?.localPackages.count) == 1
+
+                let localPackageFiles = pbxProject.fileReferences.filter { $0.path == "../FooFeature" }
+                try expect(localPackageFiles.count) == 1
+            }
+
             $0.it("generates info.plist") {
                 let plist = Plist(path: "Info.plist", attributes: ["UISupportedInterfaceOrientations": ["UIInterfaceOrientationPortrait", "UIInterfaceOrientationLandscapeLeft"]])
                 let tempPath = Path.temporary + "info"
@@ -1804,6 +1882,79 @@ class ProjectGeneratorTests: XCTestCase {
                 ]
 
                 try expect(NSDictionary(dictionary: expectedInfoPlist).isEqual(to: infoPlist)).beTrue()
+            }
+
+            $0.it("generates info.plist relative to project directory") {
+                let plist = Plist(path: "GeneratedInfo.plist", attributes: [:])
+                let projectBasePath = fixturePath + "paths_test/relative_local_package"
+                let destinationPath = fixturePath
+                let outputPlistPath = destinationPath + plist.path
+                let sourcePlistPath = projectBasePath + plist.path
+                defer {
+                    try? outputPlistPath.delete()
+                    try? sourcePlistPath.delete()
+                }
+
+                let project = Project(
+                    basePath: projectBasePath,
+                    name: "",
+                    targets: [Target(name: "", type: .application, platform: .iOS, info: plist)]
+                )
+                let writer = FileWriter(project: project, projectDirectory: destinationPath)
+                try writer.writePlists()
+
+                try expect(outputPlistPath.exists).to.beTrue()
+                try expect(sourcePlistPath.exists).to.beFalse()
+            }
+
+            $0.it("does not write info.plist paths containing build variables") {
+                let plist = Plist(path: "${PROJECT_DIR}/GeneratedInfo.plist", attributes: [:])
+                let tempPath = try Path.processUniqueTemporary() + "variable_plist"
+                let project = Project(
+                    basePath: tempPath,
+                    name: "",
+                    targets: [Target(name: "", type: .application, platform: .iOS, info: plist)]
+                )
+                let writer = FileWriter(project: project)
+                try writer.writePlists()
+
+                let variableDirectory = tempPath + "${PROJECT_DIR}"
+                try expect(variableDirectory.exists).to.beFalse()
+                try? tempPath.delete()
+            }
+
+            $0.it("handles #1584 info.plist parent paths from nested project directories") {
+                let tempPath = try Path.processUniqueTemporary() + "issue_1584"
+                let sourceDirectoryName = "source_files_\(tempPath.lastComponent)"
+                let sourcePlistPath = Path(sourceDirectoryName) + "code dir1/Info.plist"
+                let nestedProjectDirectory = tempPath + "project files dir"
+                let expectedPlistPath = tempPath + sourcePlistPath
+                let unexpectedPlistPath = tempPath.parent() + sourcePlistPath
+
+                defer {
+                    try? tempPath.delete()
+                    let unexpectedRoot = tempPath.parent() + Path(sourceDirectoryName)
+                    try? unexpectedRoot.delete()
+                }
+
+                let relativeProject = Project(
+                    basePath: tempPath,
+                    name: "",
+                    targets: [Target(name: "RelativeTarget", type: .application, platform: .iOS, info: Plist(path: "../\(sourcePlistPath.string)", attributes: [:]))]
+                )
+                try FileWriter(project: relativeProject, projectDirectory: nestedProjectDirectory).writePlists()
+                try expect(expectedPlistPath.exists).to.beTrue()
+                try expect(unexpectedPlistPath.exists).to.beFalse()
+
+                let variableProject = Project(
+                    basePath: tempPath,
+                    name: "",
+                    targets: [Target(name: "VariableTarget", type: .application, platform: .iOS, info: Plist(path: "${PROJECT_DIR}/../\(sourcePlistPath.string)", attributes: [:]))]
+                )
+                try FileWriter(project: variableProject, projectDirectory: nestedProjectDirectory).writePlists()
+
+                let variableDirectory = nestedProjectDirectory + "${PROJECT_DIR}"
+                try expect(variableDirectory.exists).to.beFalse()
             }
 
             $0.it("info doesn't override info.plist setting") {
@@ -1950,6 +2101,100 @@ class ProjectGeneratorTests: XCTestCase {
                 try expect(productNames).contains { $0 == "FooDomain" }
                 try expect(productNames).contains { $0 == "FooUI" }
             }
+
+            $0.it("writes local swift package dependencies with package references") {
+                let app = Target(
+                    name: "MyApp",
+                    type: .application,
+                    platform: .iOS,
+                    dependencies: [
+                        Dependency(type: .package(products: ["FooDomain", "FooUI"]), reference: "FooFeature")
+                    ]
+                )
+
+                let project = Project(name: "test", targets: [app], packages: [
+                    "FooFeature": .local(path: "../FooFeature", group: nil, excludeFromProject: false)
+                ])
+
+                let projectPath = try Path.processUniqueTemporary() + "LocalPackageReferences.xcodeproj"
+                defer { try? projectPath.delete() }
+
+                let generator = ProjectGenerator(project: project)
+                let xcodeProject = try generator.generateXcodeProject(userName: "someUser")
+                let writer = FileWriter(project: project)
+                try writer.writeXcodeProject(xcodeProject, to: projectPath)
+
+                let pbxprojPath = projectPath + "project.pbxproj"
+                let pbxproj: String = try pbxprojPath.read()
+
+                func dependencyBlock(for productName: String) -> String? {
+                    guard let sectionStart = pbxproj.range(of: "/* Begin XCSwiftPackageProductDependency section */"),
+                        let sectionEnd = pbxproj.range(of: "/* End XCSwiftPackageProductDependency section */") else {
+                        return nil
+                    }
+                    let section = String(pbxproj[sectionStart.lowerBound..<sectionEnd.upperBound])
+                    let marker = "/* \(productName) */ = {"
+                    guard let start = section.range(of: marker),
+                        let end = section[start.lowerBound...].range(of: "\n\t\t};") else {
+                        return nil
+                    }
+                    return String(section[start.lowerBound..<end.upperBound])
+                }
+
+                let fooDomainBlock = dependencyBlock(for: "FooDomain")
+                let fooUIBlock = dependencyBlock(for: "FooUI")
+
+                try expect(fooDomainBlock != nil).to.beTrue()
+                try expect(fooUIBlock != nil).to.beTrue()
+                try expect(fooDomainBlock?.contains("package = ")).to.beTrue()
+                try expect(fooUIBlock?.contains("package = ")).to.beTrue()
+                try expect(fooDomainBlock?.contains("XCLocalSwiftPackageReference \"../FooFeature\"")).to.beTrue()
+                try expect(fooUIBlock?.contains("XCLocalSwiftPackageReference \"../FooFeature\"")).to.beTrue()
+            }
+
+            $0.it("writes local build tool plugin dependencies with package references") {
+                let app = Target(
+                    name: "MyApp",
+                    type: .application,
+                    platform: .iOS,
+                    buildToolPlugins: [BuildToolPlugin(plugin: "FooPlugin", package: "FooFeature")]
+                )
+
+                let project = Project(name: "test", targets: [app], packages: [
+                    "FooFeature": .local(path: "../FooFeature", group: nil, excludeFromProject: false)
+                ])
+
+                let projectPath = try Path.processUniqueTemporary() + "LocalPluginReferences.xcodeproj"
+                defer { try? projectPath.delete() }
+
+                let generator = ProjectGenerator(project: project)
+                let xcodeProject = try generator.generateXcodeProject(userName: "someUser")
+                let writer = FileWriter(project: project)
+                try writer.writeXcodeProject(xcodeProject, to: projectPath)
+
+                let pbxprojPath = projectPath + "project.pbxproj"
+                let pbxproj: String = try pbxprojPath.read()
+
+                func dependencyBlock(for commentName: String) -> String? {
+                    guard let sectionStart = pbxproj.range(of: "/* Begin XCSwiftPackageProductDependency section */"),
+                        let sectionEnd = pbxproj.range(of: "/* End XCSwiftPackageProductDependency section */") else {
+                        return nil
+                    }
+                    let section = String(pbxproj[sectionStart.lowerBound..<sectionEnd.upperBound])
+                    let marker = "/* \(commentName) */ = {"
+                    guard let start = section.range(of: marker),
+                        let end = section[start.lowerBound...].range(of: "\n\t\t};") else {
+                        return nil
+                    }
+                    return String(section[start.lowerBound..<end.upperBound])
+                }
+
+                let pluginBlock = dependencyBlock(for: "FooPlugin")
+                try expect(pluginBlock != nil).to.beTrue()
+                try expect(pluginBlock?.contains("productName = \"plugin:FooPlugin\";")).to.beTrue()
+                try expect(pluginBlock?.contains("package = ")).to.beTrue()
+                try expect(pluginBlock?.contains("XCLocalSwiftPackageReference \"../FooFeature\"")).to.beTrue()
+            }
         }
     }
 
@@ -1994,6 +2239,83 @@ class ProjectGeneratorTests: XCTestCase {
                     for plist in plists {
                         try expect(plist) == "TestProject/App_iOS/Info.plist"
                     }
+                }
+
+                $0.it("generates local package reference paths relative to destination") {
+                    let projectBasePath = fixturePath + "paths_test/relative_local_package"
+                    let destinationPath = fixturePath
+                    let app = Target(
+                        name: "App",
+                        type: .application,
+                        platform: .iOS,
+                        dependencies: [
+                            Dependency(type: .package(products: ["LocalPackage"]), reference: "LocalPackage"),
+                        ]
+                    )
+                    let project = Project(
+                        basePath: projectBasePath,
+                        name: "test",
+                        targets: [app],
+                        packages: [
+                            "LocalPackage": .local(path: "LocalPackage", group: nil, excludeFromProject: false),
+                        ]
+                    )
+                    let generator = ProjectGenerator(project: project)
+                    let generatedProject = try generator.generateXcodeProject(in: destinationPath, userName: "someUser")
+
+                    let localPackageReference = try unwrap(generatedProject.pbxproj.rootObject?.localPackages.first)
+                    try expect(localPackageReference.relativePath) == "paths_test/relative_local_package/LocalPackage"
+                }
+
+                $0.it("writes local package dependencies with package references for destination generation") {
+                    let projectBasePath = fixturePath + "paths_test/relative_local_package"
+                    let destinationPath = fixturePath
+                    let app = Target(
+                        name: "App",
+                        type: .application,
+                        platform: .iOS,
+                        dependencies: [
+                            Dependency(type: .package(products: ["LocalPackage"]), reference: "LocalPackage"),
+                        ]
+                    )
+                    let project = Project(
+                        basePath: projectBasePath,
+                        name: "test",
+                        targets: [app],
+                        packages: [
+                            "LocalPackage": .local(path: "LocalPackage", group: nil, excludeFromProject: false),
+                        ]
+                    )
+
+                    let outputProjectPath = destinationPath + "LocalPackageDestinationWrite.xcodeproj"
+                    defer { try? outputProjectPath.delete() }
+
+                    let generator = ProjectGenerator(project: project)
+                    let xcodeProject = try generator.generateXcodeProject(in: destinationPath, userName: "someUser")
+                    let writer = FileWriter(project: project)
+                    try writer.writeXcodeProject(xcodeProject, to: outputProjectPath)
+
+                    let pbxprojPath = outputProjectPath + "project.pbxproj"
+                    let pbxproj: String = try pbxprojPath.read()
+
+                    func dependencyBlock(for commentName: String) -> String? {
+                        guard let sectionStart = pbxproj.range(of: "/* Begin XCSwiftPackageProductDependency section */"),
+                            let sectionEnd = pbxproj.range(of: "/* End XCSwiftPackageProductDependency section */") else {
+                            return nil
+                        }
+                        let section = String(pbxproj[sectionStart.lowerBound..<sectionEnd.upperBound])
+                        let marker = "/* \(commentName) */ = {"
+                        guard let start = section.range(of: marker),
+                            let end = section[start.lowerBound...].range(of: "\n\t\t};") else {
+                            return nil
+                        }
+                        return String(section[start.lowerBound..<end.upperBound])
+                    }
+
+                    let localPackageBlock = dependencyBlock(for: "LocalPackage")
+                    try expect(localPackageBlock != nil).to.beTrue()
+                    try expect(localPackageBlock?.contains("package = ")).to.beTrue()
+                    try expect(localPackageBlock?.contains("XCLocalSwiftPackageReference \"paths_test/relative_local_package/LocalPackage\"")).to.beTrue()
                 }
             }
 
@@ -2262,19 +2584,26 @@ class ProjectGeneratorTests: XCTestCase {
         
         describe("generateXcodeProject") {
             
-            func generateProjectForApp(withDependencies: [Dependency], targets: [Target], packages: [String: SwiftPackage] = [:]) throws -> PBXProj {
+            func generateProjectForApp(
+                withDependencies: [Dependency],
+                targets: [Target],
+                packages: [String: SwiftPackage] = [:],
+                appPlatform: Platform = .macOS,
+                options: SpecOptions = .init()
+            ) throws -> PBXProj {
                 
                 let app = Target(
                     name: "App",
                     type: .application,
-                    platform: .macOS,
+                    platform: appPlatform,
                     dependencies: withDependencies
                 )
                 
                 let project = Project(
                     name: "test",
                     targets: targets + [app],
-                    packages: packages
+                    packages: packages,
+                    options: options
                 )
 
                 return try project.generatePbxProj()
@@ -2300,6 +2629,34 @@ class ProjectGeneratorTests: XCTestCase {
             }
             
             $0.context("with target dependencies") {
+                $0.it("embeds watch apps into PlugIns for xcode26_3") {
+                    let watchApp = Target(name: "watchApp", type: .application, platform: .watchOS)
+                    let dependencies = [Dependency(type: .target, reference: watchApp.name, embed: true)]
+
+                    let pbxProject = try generateProjectForApp(
+                        withDependencies: dependencies,
+                        targets: [watchApp],
+                        appPlatform: .iOS,
+                        options: .init(projectFormat: "xcode26_3")
+                    )
+
+                    try expectCopyPhase(in: pbxProject, withFilePaths: ["watchApp.app"], toSubFolder: .plugins, dstPath: "")
+                }
+
+                $0.it("keeps Watch destination for pre-xcode26 formats") {
+                    let watchApp = Target(name: "watchApp", type: .application, platform: .watchOS)
+                    let dependencies = [Dependency(type: .target, reference: watchApp.name, embed: true)]
+
+                    let pbxProject = try generateProjectForApp(
+                        withDependencies: dependencies,
+                        targets: [watchApp],
+                        appPlatform: .iOS,
+                        options: .init(projectFormat: "xcode16_3")
+                    )
+
+                    try expectCopyPhase(in: pbxProject, withFilePaths: ["watchApp.app"], toSubFolder: .productsDirectory, dstPath: "$(CONTENTS_FOLDER_PATH)/Watch")
+                }
+
                 $0.context("application") {
                     
                     let appA = Target(

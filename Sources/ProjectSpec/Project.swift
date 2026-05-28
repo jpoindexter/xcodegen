@@ -170,6 +170,11 @@ extension Project {
     public init(basePath: Path = "", jsonDictionary: JSONDictionary) throws {
         self.basePath = basePath
 
+        let unknownKeys = Set(jsonDictionary.keys).subtracting(Self.validProjectKeys)
+        if !unknownKeys.isEmpty {
+            throw SpecParsingError.unknownProjectKeys(keys: unknownKeys)
+        }
+
         let jsonDictionary = Project.resolveProject(jsonDictionary: jsonDictionary)
         let buildSettingsParser = BuildSettingsParser(jsonDictionary: jsonDictionary)
 
@@ -178,7 +183,9 @@ extension Project {
         settings = try buildSettingsParser.parse()
         settingGroups = try buildSettingsParser.parseSettingGroups()
 
-        let configs: [String: String] = jsonDictionary.json(atKeyPath: "configs") ?? [:]
+        let configs: [String: String] = jsonDictionary.json(atKeyPath: "configs")
+            ?? jsonDictionary.json(atKeyPath: "configurations")
+            ?? [:]
         self.configs = configs.isEmpty ? Config.defaultConfigs :
             configs.map { Config(name: $0, type: ConfigType(rawValue: $1)) }.sorted { $0.name < $1.name }
         targets = try jsonDictionary.json(atKeyPath: "targets", parallel: true).sorted { $0.name < $1.name }
@@ -218,6 +225,30 @@ extension Project {
         projectReferencesMap = Dictionary(uniqueKeysWithValues: projectReferences.map { ($0.name, $0) })
     }
 
+    private static let validProjectKeys: Set<String> = [
+        "name",
+        "settings",
+        "settingGroups",
+        "settingPresets",
+        "configs",
+        "configurations",
+        "targets",
+        "aggregateTargets",
+        "projectReferences",
+        "schemes",
+        "breakpoints",
+        "fileGroups",
+        "configFiles",
+        "attributes",
+        "packages",
+        "localPackages",
+        "options",
+        "targetTemplates",
+        "schemeTemplates",
+        "templates",
+        "include",
+    ]
+
     static func resolveProject(jsonDictionary: JSONDictionary) -> JSONDictionary {
         var jsonDictionary = jsonDictionary
 
@@ -252,6 +283,14 @@ extension Project: PathContainer {
 
 extension Project {
 
+    private static let cacheExcludedFileNames: Set<String> = [
+        ".DS_Store",
+    ]
+
+    private static let cacheExcludedExtensions: Set<String> = [
+        "orig",
+    ]
+
     public var allTrackedFiles: [Path] {
         var files: [Path] = []
         files.append(contentsOf: configFilePaths)
@@ -279,7 +318,15 @@ extension Project {
                 files.append(sourcePath)
             }
         }
-        return files
+        return files.filter { path in
+            guard !Project.cacheExcludedFileNames.contains(path.lastComponent) else {
+                return false
+            }
+            guard let `extension` = path.extension?.lowercased() else {
+                return true
+            }
+            return !Project.cacheExcludedExtensions.contains(`extension`)
+        }
     }
 }
 

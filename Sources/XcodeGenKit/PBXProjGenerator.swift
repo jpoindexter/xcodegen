@@ -165,6 +165,9 @@ public class PBXProjGenerator {
             targetAggregateObjects[target.name] = aggregateTarget
         }
 
+        var localPackageReferencesByPath: [String: XCLocalSwiftPackageReference] = [:]
+        var localPackagePathsAddedToProject: Set<String> = []
+
         for (name, package) in project.packages {
             switch package {
             case let .remote(url, versionRequirement):
@@ -172,10 +175,17 @@ public class PBXProjGenerator {
                 packageReferences[name] = packageReference
                 addObject(packageReference)
             case let .local(path, group, excludeFromProject):
-                let packageReference = XCLocalSwiftPackageReference(relativePath: path)
+                let absolutePath = (project.basePath + Path(path).normalize()).absolute().normalize()
+                let relativePath = (try? absolutePath.relativePath(from: projectDirectory ?? project.basePath).string) ?? path
+                let pathKey = absolutePath.string
+
+                let packageReference = localPackageReferencesByPath[pathKey] ??
+                    XCLocalSwiftPackageReference(relativePath: relativePath)
+
+                localPackageReferencesByPath[pathKey] = packageReference
                 localPackageReferences[name] = packageReference
 
-                if !excludeFromProject {
+                if !excludeFromProject, localPackagePathsAddedToProject.insert(pathKey).inserted {
                     addObject(packageReference)
                     try sourceGenerator.createLocalPackage(path: Path(path), group: group.map { Path($0) })
                 }
@@ -1295,15 +1305,25 @@ public class PBXProjGenerator {
         }
         
         if !copyWatchReferences.isEmpty {
-
-            let copyFilesPhase = addObject(
-                PBXCopyFilesBuildPhase(
-                    dstPath: "$(CONTENTS_FOLDER_PATH)/Watch",
-                    dstSubfolderSpec: .productsDirectory,
-                    name: "Embed Watch Content",
-                    files: copyWatchReferences
+            let copyFilesPhase: PBXCopyFilesBuildPhase
+            if project.objectVersion >= ProjectFormat.xcode26_3.objectVersion {
+                copyFilesPhase = addObject(
+                    getPBXCopyFilesBuildPhase(
+                        dstSubfolderSpec: .plugins,
+                        name: "Embed Watch Content",
+                        files: copyWatchReferences
+                    )
                 )
-            )
+            } else {
+                copyFilesPhase = addObject(
+                    PBXCopyFilesBuildPhase(
+                        dstPath: "$(CONTENTS_FOLDER_PATH)/Watch",
+                        dstSubfolderSpec: .productsDirectory,
+                        name: "Embed Watch Content",
+                        files: copyWatchReferences
+                    )
+                )
+            }
 
             buildPhases.append(copyFilesPhase)
         }

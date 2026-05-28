@@ -84,7 +84,7 @@ class GenerateCommand: ProjectCommand {
 
         // generate plists
         info("⚙️  Generating plists...")
-        let fileWriter = FileWriter(project: project)
+        let fileWriter = FileWriter(project: project, projectDirectory: projectDirectory)
         do {
             try fileWriter.writePlists()
             if onlyPlists {

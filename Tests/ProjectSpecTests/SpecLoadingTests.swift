@@ -624,6 +624,24 @@ class SpecLoadingTests: XCTestCase {
                 
                 try expect(project.targets) == [target]
             }
+
+            $0.it("parses deploymentTarget dictionary with supported destinations") {
+                let targetDictionary: [String: Any] = [
+                    "type": "application",
+                    "supportedDestinations": ["iOS", "macOS"],
+                    "deploymentTarget": [
+                        "iOS": "18.0",
+                        "macOS": "15.0",
+                    ],
+                ]
+
+                let project = try getProjectSpec(["targets": ["App": targetDictionary]])
+                let target = try unwrap(project.targets.first)
+
+                try expect(target.platform) == .auto
+                try expect(target.deploymentTarget).beNil()
+                try expect(target.deploymentTargets) == DeploymentTarget(iOS: "18.0", macOS: "15.0")
+            }
             
             $0.it("parses no platform fails if we are not using supported destinations") {
                 let expectedError = SpecParsingError.unknownTargetPlatform("")
@@ -637,6 +655,15 @@ class SpecLoadingTests: XCTestCase {
                 
                 try expectError(expectedError) {
                     _ = try Project(jsonDictionary: projectDictionary)
+                }
+            }
+
+            $0.it("fails parsing on unknown top-level project keys") {
+                try expectError(SpecParsingError.unknownProjectKeys(keys: ["thisshoulderror"])) {
+                    _ = try Project(jsonDictionary: [
+                        "name": "test",
+                        "thisshoulderror": "nope",
+                    ])
                 }
             }
             
@@ -983,6 +1010,7 @@ class SpecLoadingTests: XCTestCase {
                         "parallelizeBuild": false,
                         "buildImplicitDependencies": false,
                         "runPostActionsOnFailure": true,
+                        "buildArchitectures": "universal",
                         "targets": [
                             "Target1": "all",
                             "Target2": "testing",
@@ -991,6 +1019,8 @@ class SpecLoadingTests: XCTestCase {
                             "Target5": ["testing": false],
                             "Target6": ["test", "analyze"],
                             "ExternalProject/Target7": ["run"],
+                            "Target8": "test",
+                            "Target9": "run",
                         ],
                         "preActions": [
                             [
@@ -1047,6 +1077,8 @@ class SpecLoadingTests: XCTestCase {
                     Scheme.BuildTarget(target: "Target5", buildTypes: []),
                     Scheme.BuildTarget(target: "Target6", buildTypes: [.testing, .analyzing]),
                     Scheme.BuildTarget(target: "ExternalProject/Target7", buildTypes: [.running]),
+                    Scheme.BuildTarget(target: "Target8", buildTypes: [.testing]),
+                    Scheme.BuildTarget(target: "Target9", buildTypes: [.running]),
                 ]
                 try expect(scheme.name) == "Scheme"
                 try expect(scheme.build.targets) == expectedTargets
@@ -1057,6 +1089,7 @@ class SpecLoadingTests: XCTestCase {
                 try expect(scheme.build.parallelizeBuild) == false
                 try expect(scheme.build.buildImplicitDependencies) == false
                 try expect(scheme.build.runPostActionsOnFailure) == true
+                try expect(scheme.build.buildArchitectures) == .universal
 
                 let expectedRun = Scheme.Run(
                     config: "debug",
@@ -1538,6 +1571,25 @@ class SpecLoadingTests: XCTestCase {
                 ]
                 let parsedSpec = try getProjectSpec(dictionary)
                 try expect(parsedSpec) == project
+            }
+
+            $0.it("parses configurations as alias for configs") {
+                let expectedConfigs = [
+                    Config(name: "AppStore", type: .release),
+                    Config(name: "Debug", type: .debug),
+                    Config(name: "Enterprise", type: .release),
+                ]
+                let dictionary: [String: Any] = [
+                    "name": "TestApp",
+                    "configurations": [
+                        "Debug": "debug",
+                        "Enterprise": "release",
+                        "AppStore": "release",
+                    ],
+                ]
+
+                let parsedSpec = try getProjectSpec(dictionary)
+                try expect(parsedSpec.configs) == expectedConfigs
             }
 
             $0.it("parses TargetScheme storeKitConfiguration as string") {

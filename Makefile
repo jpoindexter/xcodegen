@@ -3,8 +3,9 @@ export EXECUTABLE_NAME = xcodegen
 VERSION = 2.45.4
 
 PREFIX = /usr/local
-INSTALL_PATH = $(PREFIX)/bin/$(EXECUTABLE_NAME)
-SHARE_PATH = $(PREFIX)/share/$(EXECUTABLE_NAME)
+DESTDIR ?=
+INSTALL_PATH = $(DESTDIR)$(PREFIX)/bin/$(EXECUTABLE_NAME)
+SHARE_PATH = $(DESTDIR)$(PREFIX)/share/$(EXECUTABLE_NAME)
 CURRENT_PATH = $(PWD)
 REPO = https://github.com/yonaskolb/$(TOOL_NAME)
 SWIFT_BUILD_FLAGS = --disable-sandbox -c release --arch arm64 --arch x86_64
@@ -14,7 +15,7 @@ EXECUTABLE_PATH = $(BUILD_PATH)/$(EXECUTABLE_NAME)
 .PHONY: install build uninstall format_code release
 
 install: build
-	mkdir -p $(PREFIX)/bin
+	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	cp -f $(EXECUTABLE_PATH) $(INSTALL_PATH)
 	mkdir -p $(SHARE_PATH)
 	cp -R $(CURRENT_PATH)/SettingPresets $(SHARE_PATH)/SettingPresets
