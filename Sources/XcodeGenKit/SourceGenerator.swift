@@ -338,6 +338,9 @@ class SourceGenerator {
         if let cachedGroup = groupsByPath[path] {
             var cachedGroupChildren = cachedGroup.children
             for child in children {
+                if child === cachedGroup {
+                    continue
+                }
                 // only add the children that aren't already in the cachedGroup
                 // Check equality by path and sourceTree because XcodeProj.PBXObject.== is very slow.
                 if !cachedGroupChildren.contains(where: { $0.name == child.name && $0.path == child.path && $0.sourceTree == child.sourceTree }) {
@@ -864,7 +867,7 @@ class SourceGenerator {
     private func createIntermediaGroups(for fileElement: PBXFileElement, at path: Path) {
 
         let parentPath = path.parent()
-        guard parentPath != project.basePath else {
+        guard parentPath != project.basePath, parentPath != path else {
             // we've reached the top
             return
         }
@@ -914,7 +917,9 @@ class SourceGenerator {
         }
 
         let completePath = (basePath) + Path(paths.joined(separator: "/"))
-        let relativePath = try path.relativePath(from: completePath)
+        guard let relativePath = try? path.relativePath(from: completePath) else {
+            return
+        }
         let relativePathString = relativePath.string
 
         if relativePathString != fileElement.path {

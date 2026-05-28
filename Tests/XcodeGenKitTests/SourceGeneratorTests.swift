@@ -1054,6 +1054,22 @@ class SourceGeneratorTests: XCTestCase {
                 try pbxProj.expectFile(paths: ["Sources", "Sources/A"], names: ["Sources", "A"], buildPhase: .resources)
             }
 
+            $0.it("generates absolute file references with createIntermediateGroups") {
+                let sourcePath = Path("/usr/bin/xcrun")
+                let target = Target(name: "Test", type: .application, platform: .iOS, sources: [
+                    TargetSource(path: sourcePath.string),
+                ])
+                let project = Project(
+                    basePath: directoryPath,
+                    name: "Test",
+                    targets: [target],
+                    options: .init(createIntermediateGroups: true)
+                )
+
+                let pbxProj = try project.generatePbxProj()
+                try expect(pbxProj.fileReferences.contains { $0.path == "xcrun" }) == true
+            }
+
             $0.it("adds files to correct build phase") {
                 let directories = """
                   A:
