@@ -429,6 +429,31 @@ class SchemeGeneratorTests: XCTestCase {
 
             }
 
+            $0.it("resolves run executable from external project target reference") {
+                let externalProjectPath = fixturePath + "TestProject/Project.xcodeproj"
+                let localTarget = Scheme.BuildTarget(target: .local(app.name))
+                let externalTarget = Scheme.BuildTarget(target: .init(name: "App_iOS", location: .project("TestProject")))
+                let scheme = Scheme(
+                    name: "ExternalProjectRunScheme",
+                    build: Scheme.Build(targets: [localTarget, externalTarget]),
+                    run: Scheme.Run(config: "Debug", executable: "TestProject/App_iOS")
+                )
+                let project = Project(
+                    name: "test",
+                    targets: [app, framework],
+                    schemes: [scheme],
+                    projectReferences: [
+                        ProjectReference(name: "TestProject", path: externalProjectPath.string),
+                    ]
+                )
+                let xcodeProject = try project.generateXcodeProject()
+                let xcscheme = try unwrap(xcodeProject.sharedData?.schemes.first)
+                let runnableReference = xcscheme.launchAction?.runnable?.buildableReference
+
+                try expect(runnableReference?.blueprintName) == "App_iOS"
+                try expect(runnableReference?.referencedContainer) == "container:\(externalProjectPath.string)"
+            }
+
             $0.it("generate scheme with code coverage options") {
                 prepareXcodeProj: do {
                     let project = try! Project(path: fixturePath + "scheme_test/test_project.yml")

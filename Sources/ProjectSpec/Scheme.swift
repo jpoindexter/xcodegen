@@ -214,6 +214,7 @@ public struct Scheme: Equatable {
             self.launchAutomaticallySubstyle = launchAutomaticallySubstyle
             self.debugEnabled = debugEnabled
             self.simulateLocation = simulateLocation
+            self.executable = executable
             self.storeKitConfiguration = storeKitConfiguration
             self.customLLDBInit = customLLDBInit
             self.macroExpansion = macroExpansion

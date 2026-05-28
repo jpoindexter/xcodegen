@@ -200,6 +200,48 @@ public class SchemeGenerator {
         let testBuildTargetEntries = try testBuildTargets.map(getBuildEntry)
 
         let buildActionEntries: [XCScheme.BuildAction.Entry] = try scheme.build.targets.map(getBuildEntry)
+        let buildTargetEntries = Array(zip(scheme.build.targets, buildActionEntries))
+
+        func getBuildTargetEntry(for executable: String) -> (Scheme.BuildTarget, XCScheme.BuildAction.Entry)? {
+            if let exactReferenceMatch = buildTargetEntries.first(where: { $0.0.target.reference == executable }) {
+                return exactReferenceMatch
+            }
+
+            if let executableTargetReference = try? TestableTargetReference(executable),
+               let exactMatch = buildTargetEntries.first(where: { $0.0.target == executableTargetReference }) {
+                return exactMatch
+            }
+
+            return buildTargetEntries.first { _, entry in
+                if entry.buildableReference.blueprintName == executable || entry.buildableReference.buildableName == executable {
+                    return true
+                }
+                return Path(entry.buildableReference.buildableName).lastComponentWithoutExtension == executable
+            }
+        }
+
+        func canExecuteOnLaunch(_ buildTarget: Scheme.BuildTarget) throws -> Bool {
+            switch buildTarget.target.location {
+            case .local:
+                return project.getTarget(buildTarget.target.name)?.shouldExecuteOnLaunch == true
+            case .project(let projectName):
+                guard let projectReference = project.getProjectReference(projectName) else {
+                    return false
+                }
+                let referencedProject = try getPBXProj(from: projectReference)
+                guard let target = referencedProject.targets(named: buildTarget.target.name).first else {
+                    return false
+                }
+                guard let productType = target.productType else {
+                    return false
+                }
+                return productType.isApp || productType.isExtension || productType.isSystemExtension || productType == .commandLineTool
+            case .package:
+                return false
+            }
+        }
+
+        let executableTargetEntry = scheme.run?.executable.flatMap(getBuildTargetEntry(for:))
 
         func getExecutionAction(_ action: Scheme.ExecutionAction) -> XCScheme.ExecutionAction {
             // ExecutionActions can require the use of build settings. Xcode allows the settings to come from a build or test target.
@@ -218,7 +260,14 @@ public class SchemeGenerator {
 
         let schemeTarget: ProjectTarget?
 
-        if let targetName = scheme.run?.executable,
+        if let executableTargetEntry {
+            switch executableTargetEntry.0.target.location {
+            case .local:
+                schemeTarget = project.getTarget(executableTargetEntry.0.target.name)
+            default:
+                schemeTarget = nil
+            }
+        } else if let targetName = scheme.run?.executable,
            let executableTarget = project.getTarget(targetName) {
             schemeTarget = executableTarget
         } else if let target {
@@ -243,9 +292,19 @@ public class SchemeGenerator {
             }
         }
 
-        let shouldExecuteOnLaunch = schemeTarget?.shouldExecuteOnLaunch == true
+        let shouldExecuteOnLaunch: Bool
+        if let schemeTarget {
+            shouldExecuteOnLaunch = schemeTarget.shouldExecuteOnLaunch
+        } else if let executableTargetEntry {
+            shouldExecuteOnLaunch = (try? canExecuteOnLaunch(executableTargetEntry.0)) ?? false
+        } else {
+            shouldExecuteOnLaunch = false
+        }
 
-        let buildableReference = buildActionEntries.first(where: { $0.buildableReference.blueprintName == schemeTarget?.name })?.buildableReference ?? buildActionEntries.first!.buildableReference
+        let buildableReference =
+            executableTargetEntry?.1.buildableReference
+            ?? buildActionEntries.first(where: { $0.buildableReference.blueprintName == schemeTarget?.name })?.buildableReference
+            ?? buildActionEntries.first!.buildableReference
         let runnables = makeProductRunnables(for: schemeTarget, buildableReference: buildableReference)
 
         let buildAction = XCScheme.BuildAction(
