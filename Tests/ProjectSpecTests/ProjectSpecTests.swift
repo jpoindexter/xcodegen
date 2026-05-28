@@ -1,3 +1,4 @@
+import Foundation
 import PathKit
 import ProjectSpec
 import Spectre
@@ -151,6 +152,37 @@ class ProjectSpecTests: XCTestCase {
                 try expectValidationError(project, .invalidLocalPackage("invalidLocalPackage"))
                 try expectValidationError(project, .invalidSettingsGroup("invalidSettingGroupSettingGroup"))
                 try expectValidationError(project, .invalidBuildSettingConfig("invalidSettingGroupConfig"))
+            }
+
+            $0.it("excludes default ignored files from tracked files") {
+                let temporaryDir = Path(NSTemporaryDirectory()) + UUID().uuidString
+                let sourceDir = temporaryDir + "Sources"
+                try sourceDir.mkpath()
+                defer {
+                    try? temporaryDir.delete()
+                }
+
+                try (sourceDir + "Source.swift").write("struct Source {}")
+                try (sourceDir + ".DS_Store").write("metadata")
+                try (sourceDir + "Source.swift.orig").write("backup")
+
+                let project = Project(
+                    basePath: temporaryDir,
+                    name: "CacheTracking",
+                    targets: [
+                        Target(
+                            name: "CacheTracking",
+                            type: .application,
+                            platform: .iOS,
+                            sources: [TargetSource(path: "Sources")]
+                        ),
+                    ]
+                )
+
+                let trackedFileNames = project.allTrackedFiles.map(\.lastComponent)
+                try expect(trackedFileNames.contains("Source.swift")) == true
+                try expect(trackedFileNames.contains(".DS_Store")) == false
+                try expect(trackedFileNames.contains("Source.swift.orig")) == false
             }
 
             $0.it("fails with duplicate dependencies") {

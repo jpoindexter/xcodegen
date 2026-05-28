@@ -254,6 +254,14 @@ extension Project: PathContainer {
 
 extension Project {
 
+    private static let cacheExcludedFileNames: Set<String> = [
+        ".DS_Store",
+    ]
+
+    private static let cacheExcludedExtensions: Set<String> = [
+        "orig",
+    ]
+
     public var allTrackedFiles: [Path] {
         var files: [Path] = []
         files.append(contentsOf: configFilePaths)
@@ -281,7 +289,15 @@ extension Project {
                 files.append(sourcePath)
             }
         }
-        return files
+        return files.filter { path in
+            guard !Project.cacheExcludedFileNames.contains(path.lastComponent) else {
+                return false
+            }
+            guard let `extension` = path.extension?.lowercased() else {
+                return true
+            }
+            return !Project.cacheExcludedExtensions.contains(`extension`)
+        }
     }
 }
 
