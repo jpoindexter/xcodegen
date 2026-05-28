@@ -1021,6 +1021,10 @@ Schemes allows for more control than the convenience [Target Scheme](#target-sch
 - [ ] **runPostActionsOnFailure**: **Bool** - Flag to determine if Xcode should run post scripts despite failure build. By default this is `false` if not set.
 - `true`: Run post scripts even if build is failed
 - `false`: Only run post scripts if build success
+- [ ] **buildArchitectures**: **String** - Override architectures setting for scheme builds. By default this is `useTargetSettings` if not set.
+  - `matchRunDestination`: Match Run Destination
+  - `universal`: Build All Architectures
+  - `useTargetSettings`: Use target `ARCHS` settings
 
 
 ```yaml
@@ -1029,6 +1033,7 @@ targets:
   FooLib/FooTarget: [test, run]
 parallelizeBuild: true
 buildImplicitDependencies: true
+buildArchitectures: matchRunDestination
 ```
 
 ### Common Build Action options

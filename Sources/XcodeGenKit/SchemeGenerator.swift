@@ -218,14 +218,29 @@ public class SchemeGenerator {
 
         let schemeTarget: ProjectTarget?
 
-        if let targetName = scheme.run?.executable {
-            schemeTarget = project.getTarget(targetName)
+        if let targetName = scheme.run?.executable,
+           let executableTarget = project.getTarget(targetName) {
+            schemeTarget = executableTarget
+        } else if let target {
+            schemeTarget = target
         } else {
-            guard let firstTarget = scheme.build.targets.first else {
+            guard !scheme.build.targets.isEmpty else {
                 throw SchemeGenerationError.missingBuildTargets(scheme.name)
             }
-            let name = scheme.build.targets.first { $0.buildTypes.contains(.running) }?.target.name ?? firstTarget.target.name
-            schemeTarget = target ?? project.getTarget(name)
+            let runningTargetNames = scheme.build.targets
+                .filter { $0.buildTypes.contains(.running) }
+                .map { $0.target.name }
+            let candidateNames = runningTargetNames.isEmpty ? scheme.build.targets.map { $0.target.name } : runningTargetNames
+            let candidates = candidateNames.compactMap(project.getTarget)
+
+            if let namedCandidate = candidates.first(where: { $0.name == scheme.name }) {
+                schemeTarget = namedCandidate
+            } else if scheme.run?.askForAppToLaunch == true,
+                      let extensionCandidate = candidates.first(where: { $0.type.isExtension }) {
+                schemeTarget = extensionCandidate
+            } else {
+                schemeTarget = candidates.first
+            }
         }
 
         let shouldExecuteOnLaunch = schemeTarget?.shouldExecuteOnLaunch == true
@@ -239,7 +254,8 @@ public class SchemeGenerator {
             postActions: scheme.build.postActions.map(getExecutionAction),
             parallelizeBuild: scheme.build.parallelizeBuild,
             buildImplicitDependencies: scheme.build.buildImplicitDependencies,
-            runPostActionsOnFailure: scheme.build.runPostActionsOnFailure
+            runPostActionsOnFailure: scheme.build.runPostActionsOnFailure,
+            buildArchitectures: scheme.build.buildArchitectures
         )
 
         let testables: [XCScheme.TestableReference] = zip(testTargets, testBuildTargetEntries).map { testTarget, testBuildEntries in

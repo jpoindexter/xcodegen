@@ -143,6 +143,54 @@ class SchemeGeneratorTests: XCTestCase {
                 try expect(buildableReference?.buildableName) == "MyApp.app"
             }
 
+            $0.it("generates scheme with explicit buildArchitectures") {
+                let scheme = Scheme(
+                    name: "MyScheme",
+                    build: Scheme.Build(
+                        targets: [buildTarget],
+                        buildArchitectures: .matchRunDestination
+                    )
+                )
+                let project = Project(
+                    name: "test",
+                    targets: [framework, app],
+                    schemes: [scheme]
+                )
+                let xcodeProject = try project.generateXcodeProject()
+                let xcscheme = try unwrap(xcodeProject.sharedData?.schemes.first)
+
+                try expect(xcscheme.buildAction?.buildArchitectures) == .matchRunDestination
+            }
+
+            $0.it("writes parallelizable false as explicit NO") {
+                let scheme = Scheme(
+                    name: "MyScheme",
+                    build: Scheme.Build(targets: [buildTarget]),
+                    test: Scheme.Test(
+                        config: "Debug",
+                        targets: [
+                            Scheme.Test.TestTarget(
+                                targetReference: try TestableTargetReference(framework.name),
+                                parallelizable: false
+                            ),
+                        ]
+                    )
+                )
+                let project = Project(
+                    name: "test",
+                    targets: [app, framework],
+                    schemes: [scheme]
+                )
+                let xcodeProject = try project.generateXcodeProject()
+                let xcscheme = try unwrap(xcodeProject.sharedData?.schemes.first)
+
+                try expect(xcscheme.testAction?.testables.first?.parallelization) == .none
+
+                let xmlData = try unwrap(xcscheme.dataRepresentation())
+                let xmlString = try unwrap(String(data: xmlData, encoding: .utf8))
+                try expect(xmlString.contains("parallelizable = \"NO\"")) == true
+            }
+
             $0.it("generates scheme with multiple configs") {
                 let configs: [Config] = [
                     Config(name: "Beta", type: .debug),
@@ -516,6 +564,39 @@ class SchemeGeneratorTests: XCTestCase {
                 let xcscheme = try unwrap(xcodeProject.sharedData?.schemes.first)
                 try expect(xcscheme.testAction?.macroExpansion?.buildableName) == "MyAppExtension.appex"
                 try expect(xcscheme.launchAction?.macroExpansion?.buildableName) == "MyApp.app"
+            }
+
+            $0.it("marks extension scheme when executable is ask on launch") {
+                let app = Target(
+                    name: "MyApp",
+                    type: .application,
+                    platform: .iOS,
+                    dependencies: [Dependency(type: .target, reference: "MyAppExtension", embed: false)]
+                )
+                let `extension` = Target(
+                    name: "MyAppExtension",
+                    type: .appExtension,
+                    platform: .iOS
+                )
+                let scheme = Scheme(
+                    name: "MyAppExtension",
+                    build: Scheme.Build(targets: [
+                        Scheme.BuildTarget(target: "MyApp"),
+                        Scheme.BuildTarget(target: "MyAppExtension"),
+                    ]),
+                    run: Scheme.Run(config: "Debug", executable: "Ask on Launch", askForAppToLaunch: true)
+                )
+                let project = Project(
+                    name: "test",
+                    targets: [app, `extension`],
+                    schemes: [scheme]
+                )
+
+                let xcodeProject = try project.generateXcodeProject()
+                let xcscheme = try unwrap(xcodeProject.sharedData?.schemes.first)
+
+                try expect(xcscheme.wasCreatedForAppExtension) == true
+                try expect(xcscheme.launchAction?.launchAutomaticallySubstyle) == "2"
             }
             
             $0.it("generates scheme with macroExpansion from tests when the main target is not part of the scheme") {

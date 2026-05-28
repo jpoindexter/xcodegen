@@ -1001,6 +1001,7 @@ class SpecLoadingTests: XCTestCase {
                         "parallelizeBuild": false,
                         "buildImplicitDependencies": false,
                         "runPostActionsOnFailure": true,
+                        "buildArchitectures": "universal",
                         "targets": [
                             "Target1": "all",
                             "Target2": "testing",
@@ -1075,6 +1076,7 @@ class SpecLoadingTests: XCTestCase {
                 try expect(scheme.build.parallelizeBuild) == false
                 try expect(scheme.build.buildImplicitDependencies) == false
                 try expect(scheme.build.runPostActionsOnFailure) == true
+                try expect(scheme.build.buildArchitectures) == .universal
 
                 let expectedRun = Scheme.Run(
                     config: "debug",
