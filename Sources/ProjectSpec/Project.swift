@@ -170,6 +170,11 @@ extension Project {
     public init(basePath: Path = "", jsonDictionary: JSONDictionary) throws {
         self.basePath = basePath
 
+        let unknownKeys = Set(jsonDictionary.keys).subtracting(Self.validProjectKeys)
+        if !unknownKeys.isEmpty {
+            throw SpecParsingError.unknownProjectKeys(keys: unknownKeys)
+        }
+
         let jsonDictionary = Project.resolveProject(jsonDictionary: jsonDictionary)
         let buildSettingsParser = BuildSettingsParser(jsonDictionary: jsonDictionary)
 
@@ -219,6 +224,30 @@ extension Project {
         aggregateTargetsMap = Dictionary(uniqueKeysWithValues: aggregateTargets.map { ($0.name, $0) })
         projectReferencesMap = Dictionary(uniqueKeysWithValues: projectReferences.map { ($0.name, $0) })
     }
+
+    private static let validProjectKeys: Set<String> = [
+        "name",
+        "settings",
+        "settingGroups",
+        "settingPresets",
+        "configs",
+        "configurations",
+        "targets",
+        "aggregateTargets",
+        "projectReferences",
+        "schemes",
+        "breakpoints",
+        "fileGroups",
+        "configFiles",
+        "attributes",
+        "packages",
+        "localPackages",
+        "options",
+        "targetTemplates",
+        "schemeTemplates",
+        "templates",
+        "include",
+    ]
 
     static func resolveProject(jsonDictionary: JSONDictionary) -> JSONDictionary {
         var jsonDictionary = jsonDictionary

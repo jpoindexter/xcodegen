@@ -1923,6 +1923,40 @@ class ProjectGeneratorTests: XCTestCase {
                 try? tempPath.delete()
             }
 
+            $0.it("handles #1584 info.plist parent paths from nested project directories") {
+                let tempPath = try Path.processUniqueTemporary() + "issue_1584"
+                let sourceDirectoryName = "source_files_\(tempPath.lastComponent)"
+                let sourcePlistPath = Path(sourceDirectoryName) + "code dir1/Info.plist"
+                let nestedProjectDirectory = tempPath + "project files dir"
+                let expectedPlistPath = tempPath + sourcePlistPath
+                let unexpectedPlistPath = tempPath.parent() + sourcePlistPath
+
+                defer {
+                    try? tempPath.delete()
+                    let unexpectedRoot = tempPath.parent() + Path(sourceDirectoryName)
+                    try? unexpectedRoot.delete()
+                }
+
+                let relativeProject = Project(
+                    basePath: tempPath,
+                    name: "",
+                    targets: [Target(name: "RelativeTarget", type: .application, platform: .iOS, info: Plist(path: "../\(sourcePlistPath.string)", attributes: [:]))]
+                )
+                try FileWriter(project: relativeProject, projectDirectory: nestedProjectDirectory).writePlists()
+                try expect(expectedPlistPath.exists).to.beTrue()
+                try expect(unexpectedPlistPath.exists).to.beFalse()
+
+                let variableProject = Project(
+                    basePath: tempPath,
+                    name: "",
+                    targets: [Target(name: "VariableTarget", type: .application, platform: .iOS, info: Plist(path: "${PROJECT_DIR}/../\(sourcePlistPath.string)", attributes: [:]))]
+                )
+                try FileWriter(project: variableProject, projectDirectory: nestedProjectDirectory).writePlists()
+
+                let variableDirectory = nestedProjectDirectory + "${PROJECT_DIR}"
+                try expect(variableDirectory.exists).to.beFalse()
+            }
+
             $0.it("info doesn't override info.plist setting") {
                 let predefinedPlistPath = "Predefined.plist"
                 // generate plist

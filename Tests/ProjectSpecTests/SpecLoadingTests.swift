@@ -657,6 +657,15 @@ class SpecLoadingTests: XCTestCase {
                     _ = try Project(jsonDictionary: projectDictionary)
                 }
             }
+
+            $0.it("fails parsing on unknown top-level project keys") {
+                try expectError(SpecParsingError.unknownProjectKeys(keys: ["thisshoulderror"])) {
+                    _ = try Project(jsonDictionary: [
+                        "name": "test",
+                        "thisshoulderror": "nope",
+                    ])
+                }
+            }
             
             $0.it("parses supported destinations with macCatalyst but not iOS, we add iOS") {
                 let targetDictionary: [String: Any] = [
