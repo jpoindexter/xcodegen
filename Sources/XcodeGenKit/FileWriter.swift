@@ -6,9 +6,11 @@ import XcodeProj
 public class FileWriter {
 
     let project: Project
+    let projectDirectory: Path?
 
-    public init(project: Project) {
+    public init(project: Project, projectDirectory: Path? = nil) {
         self.project = project
+        self.projectDirectory = projectDirectory
     }
 
     public func writeXcodeProject(_ xcodeProject: XcodeProj, to projectPath: Path? = nil) throws {
@@ -46,7 +48,14 @@ public class FileWriter {
     }
 
     private func writePlist(_ plist: [String: Any], path: String) throws {
-        let path = project.basePath + path
+        // If a build variable path is provided, let Xcode resolve it.
+        if path.contains("$(") || path.contains("${") {
+            return
+        }
+
+        let basePath = projectDirectory ?? project.basePath
+        let targetPath = Path(path)
+        let path = targetPath.isAbsolute ? targetPath : basePath + path
         if path.exists, let data: Data = try? path.read(),
             let existingPlist = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any], NSDictionary(dictionary: plist).isEqual(to: existingPlist) {
             // file is the same

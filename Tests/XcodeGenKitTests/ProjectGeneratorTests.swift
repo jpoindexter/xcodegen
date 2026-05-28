@@ -1884,6 +1884,45 @@ class ProjectGeneratorTests: XCTestCase {
                 try expect(NSDictionary(dictionary: expectedInfoPlist).isEqual(to: infoPlist)).beTrue()
             }
 
+            $0.it("generates info.plist relative to project directory") {
+                let plist = Plist(path: "GeneratedInfo.plist", attributes: [:])
+                let projectBasePath = fixturePath + "paths_test/relative_local_package"
+                let destinationPath = fixturePath
+                let outputPlistPath = destinationPath + plist.path
+                let sourcePlistPath = projectBasePath + plist.path
+                defer {
+                    try? outputPlistPath.delete()
+                    try? sourcePlistPath.delete()
+                }
+
+                let project = Project(
+                    basePath: projectBasePath,
+                    name: "",
+                    targets: [Target(name: "", type: .application, platform: .iOS, info: plist)]
+                )
+                let writer = FileWriter(project: project, projectDirectory: destinationPath)
+                try writer.writePlists()
+
+                try expect(outputPlistPath.exists).to.beTrue()
+                try expect(sourcePlistPath.exists).to.beFalse()
+            }
+
+            $0.it("does not write info.plist paths containing build variables") {
+                let plist = Plist(path: "${PROJECT_DIR}/GeneratedInfo.plist", attributes: [:])
+                let tempPath = try Path.processUniqueTemporary() + "variable_plist"
+                let project = Project(
+                    basePath: tempPath,
+                    name: "",
+                    targets: [Target(name: "", type: .application, platform: .iOS, info: plist)]
+                )
+                let writer = FileWriter(project: project)
+                try writer.writePlists()
+
+                let variableDirectory = tempPath + "${PROJECT_DIR}"
+                try expect(variableDirectory.exists).to.beFalse()
+                try? tempPath.delete()
+            }
+
             $0.it("info doesn't override info.plist setting") {
                 let predefinedPlistPath = "Predefined.plist"
                 // generate plist
