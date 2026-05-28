@@ -46,15 +46,20 @@ public class SchemeGenerator {
         management: XCSchemeManagement?
     ) {
         var schemes: [(Scheme, ProjectTarget?)] = []
+        var generatedSchemeNames = Set<String>()
 
         for scheme in project.schemes {
             schemes.append((scheme, nil))
+            generatedSchemeNames.insert(scheme.name)
         }
 
         for target in project.projectTargets {
             if let targetScheme = target.scheme {
                 if targetScheme.configVariants.isEmpty {
                     let schemeName = target.name
+                    if generatedSchemeNames.contains(schemeName) {
+                        continue
+                    }
 
                     let debugConfig = suitableConfig(for: .debug, in: project)
                     let releaseConfig = suitableConfig(for: .release, in: project)
@@ -68,10 +73,14 @@ public class SchemeGenerator {
                         releaseConfig: releaseConfig.name
                     )
                     schemes.append((scheme, target))
+                    generatedSchemeNames.insert(schemeName)
                 } else {
                     for configVariant in targetScheme.configVariants {
 
                         let schemeName = "\(target.name) \(configVariant)"
+                        if generatedSchemeNames.contains(schemeName) {
+                            continue
+                        }
 
                         let debugConfig = project.configs
                             .first(including: configVariant, for: .debug)!
@@ -88,6 +97,7 @@ public class SchemeGenerator {
                             releaseConfig: releaseConfig.name
                         )
                         schemes.append((scheme, target))
+                        generatedSchemeNames.insert(schemeName)
                     }
                 }
             }

@@ -143,6 +143,30 @@ class SchemeGeneratorTests: XCTestCase {
                 try expect(buildableReference?.buildableName) == "MyApp.app"
             }
 
+            $0.it("generates ui test scheme with host app as executable") {
+                let hostBuildTarget = Scheme.BuildTarget(target: .local(app.name), buildTypes: [.running, .testing])
+                let uiTestBuildTarget = Scheme.BuildTarget(target: .local(uiTest.name), buildTypes: [.testing])
+                let scheme = Scheme(
+                    name: "MyUITestScheme",
+                    build: Scheme.Build(targets: [hostBuildTarget, uiTestBuildTarget]),
+                    test: Scheme.Test(
+                        config: "Debug",
+                        targets: [
+                            .init(targetReference: try TestableTargetReference(uiTest.name)),
+                        ]
+                    )
+                )
+                let project = Project(
+                    name: "test",
+                    targets: [app, framework, uiTest],
+                    schemes: [scheme]
+                )
+                let xcodeProject = try project.generateXcodeProject()
+                let xcscheme = try unwrap(xcodeProject.sharedData?.schemes.first)
+
+                try expect(xcscheme.launchAction?.runnable?.buildableReference?.blueprintName) == app.name
+            }
+
             $0.it("generates scheme with explicit buildArchitectures") {
                 let scheme = Scheme(
                     name: "MyScheme",
@@ -754,6 +778,38 @@ class SchemeGeneratorTests: XCTestCase {
                 ]
             }
 
+            $0.it("prefers explicit scheme over auto target scheme with same name") {
+                let testPlanPath = "\(fixturePath.string)/TestProject/App_iOS/App_iOS.xctestplan"
+                var targetWithAutoScheme = app
+                targetWithAutoScheme.scheme = TargetScheme(
+                    testTargets: [
+                        .init(targetReference: try TestableTargetReference(frameworkTest.name)),
+                    ]
+                )
+
+                let explicitScheme = Scheme(
+                    name: app.name,
+                    build: Scheme.Build(targets: [buildTarget]),
+                    test: Scheme.Test(
+                        config: "Debug",
+                        targets: [.init(targetReference: try TestableTargetReference(frameworkTest.name))],
+                        testPlans: [.init(path: testPlanPath, defaultPlan: true)]
+                    )
+                )
+                let project = Project(
+                    name: "test",
+                    targets: [targetWithAutoScheme, framework, frameworkTest],
+                    schemes: [explicitScheme]
+                )
+                let xcodeProject = try project.generateXcodeProject()
+                let schemes = xcodeProject.sharedData?.schemes ?? []
+                try expect(schemes.filter { $0.name == app.name }.count) == 1
+                let xcscheme = try unwrap(schemes.first(where: { $0.name == app.name }))
+                try expect(xcscheme.testAction?.testPlans) == [
+                    .init(reference: "container:\(testPlanPath)", default: true),
+                ]
+            }
+
             $0.it("generates scheme with screenshots as preferred screen capture format") {
                 let scheme = Scheme(
                     name: "MyScheme",
@@ -770,6 +826,9 @@ class SchemeGeneratorTests: XCTestCase {
 
                 let xcscheme = try unwrap(xcodeProject.sharedData?.schemes.first)
                 try expect(xcscheme.testAction?.preferredScreenCaptureFormat) == .screenshots
+                let xmlData = try unwrap(xcscheme.dataRepresentation())
+                let xmlString = try unwrap(String(data: xmlData, encoding: .utf8))
+                try expect(xmlString.contains("preferredScreenCaptureFormat = \"screenshots\"")) == true
             }
 
             $0.it("generates scheme with screen recording as preferred screen capture format") {
