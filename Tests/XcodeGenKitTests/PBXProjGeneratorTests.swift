@@ -108,6 +108,23 @@ class PBXProjGeneratorTests: XCTestCase {
                 removeDirectories()
             }
 
+            $0.it("supports xcode26_3 project format") {
+                let directories = """
+                Sources:
+                  - main.swift
+                """
+                try createDirectories(directories)
+
+                let target = Target(name: "Test", type: .application, platform: .iOS, sources: ["Sources"])
+                let options = SpecOptions(projectFormat: "xcode26_3")
+                let project = Project(basePath: directoryPath, name: "Test", targets: [target], options: options)
+
+                let pbxProj = try project.generatePbxProj()
+                try expect(pbxProj.objectVersion) == 100
+                try expect(pbxProj.rootObject?.preferredProjectObjectVersion) == 100
+                try expect(pbxProj.rootObject?.compatibilityVersion).beNil()
+            }
+
             $0.it("setups group ordering with groupSortPosition = .top") {
                 var options = SpecOptions()
                 options.groupSortPosition = .top

@@ -458,6 +458,45 @@ class ProjectSpecTests: XCTestCase {
                 try expectValidationError(project, .invalidPerConfigSettings)
             }
 
+            $0.it("accepts custom build configurations via configurations alias") {
+                let projectDictionary: [String: Any] = [
+                    "name": "TestApp",
+                    "configurations": [
+                        "Debug": "debug",
+                        "Enterprise": "release",
+                        "AppStore": "release",
+                    ],
+                    "targets": [
+                        "TestApp": [
+                            "type": "application",
+                            "platform": "iOS",
+                            "settings": [
+                                "configs": [
+                                    "Enterprise": [
+                                        "SWIFT_VERSION": "5.0",
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                    "schemes": [
+                        "Enterprise": [
+                            "build": [
+                                "targets": [
+                                    "TestApp": "all",
+                                ],
+                            ],
+                            "archive": [
+                                "config": "Enterprise",
+                            ],
+                        ],
+                    ],
+                ]
+
+                let project = try Project(jsonDictionary: projectDictionary)
+                try project.validate()
+            }
+
             $0.it("allows custom scheme for aggregated target") {
                 var project = baseProject
                 let buildScript = BuildScript(script: .path(#file), name: "buildScript1")

@@ -178,7 +178,9 @@ extension Project {
         settings = try buildSettingsParser.parse()
         settingGroups = try buildSettingsParser.parseSettingGroups()
 
-        let configs: [String: String] = jsonDictionary.json(atKeyPath: "configs") ?? [:]
+        let configs: [String: String] = jsonDictionary.json(atKeyPath: "configs")
+            ?? jsonDictionary.json(atKeyPath: "configurations")
+            ?? [:]
         self.configs = configs.isEmpty ? Config.defaultConfigs :
             configs.map { Config(name: $0, type: ConfigType(rawValue: $1)) }.sorted { $0.name < $1.name }
         targets = try jsonDictionary.json(atKeyPath: "targets", parallel: true).sorted { $0.name < $1.name }

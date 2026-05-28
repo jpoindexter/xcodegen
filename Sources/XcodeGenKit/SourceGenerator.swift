@@ -697,6 +697,7 @@ class SourceGenerator {
         var sourceFiles: [SourceFile] = []
         let sourceReference: PBXFileElement
         var sourcePath = path
+        var shouldNestInExistingParentGroup = false
         switch type {
         case .folder:
             let fileReference = getFileReference(
@@ -769,6 +770,7 @@ class SourceGenerator {
 
             let relativePath = (try? path.relativePath(from: project.basePath)) ?? path
             let resolvedExplicitFolders = resolveExplicitFolders(targetSource: targetSource)
+            shouldNestInExistingParentGroup = groupsByPath[path.parent()] != nil
 
             let syncedRootGroup: PBXFileSystemSynchronizedRootGroup
             if let existingGroup = syncedGroupsByPath[relativePath.string] {
@@ -791,7 +793,7 @@ class SourceGenerator {
             }
             sourceReference = syncedRootGroup
 
-            if !(createIntermediateGroups || hasCustomParent) || path.parent() == project.basePath {
+            if !(createIntermediateGroups || hasCustomParent || shouldNestInExistingParentGroup) || path.parent() == project.basePath {
                 rootGroups.insert(syncedRootGroup)
             }
 
@@ -808,7 +810,7 @@ class SourceGenerator {
         if hasCustomParent {
             createParentGroups(customParentGroups, for: sourceReference)
             try makePathRelative(for: sourceReference, at: path)
-        } else if createIntermediateGroups {
+        } else if createIntermediateGroups || shouldNestInExistingParentGroup {
             createIntermediaGroups(for: sourceReference, at: sourcePath)
             if type != .folder {
                 try makePathRelative(for: sourceReference, at: sourcePath)

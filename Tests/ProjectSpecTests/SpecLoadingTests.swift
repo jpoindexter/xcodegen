@@ -1540,6 +1540,25 @@ class SpecLoadingTests: XCTestCase {
                 try expect(parsedSpec) == project
             }
 
+            $0.it("parses configurations as alias for configs") {
+                let expectedConfigs = [
+                    Config(name: "AppStore", type: .release),
+                    Config(name: "Debug", type: .debug),
+                    Config(name: "Enterprise", type: .release),
+                ]
+                let dictionary: [String: Any] = [
+                    "name": "TestApp",
+                    "configurations": [
+                        "Debug": "debug",
+                        "Enterprise": "release",
+                        "AppStore": "release",
+                    ],
+                ]
+
+                let parsedSpec = try getProjectSpec(dictionary)
+                try expect(parsedSpec.configs) == expectedConfigs
+            }
+
             $0.it("parses TargetScheme storeKitConfiguration as string") {
                 var targetDictionary = validTarget
                 targetDictionary["scheme"] = [
