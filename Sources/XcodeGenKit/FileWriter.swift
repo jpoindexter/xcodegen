@@ -19,6 +19,7 @@ public class FileWriter {
             try projectPath.copy(tempPath)
         }
         try xcodeProject.write(path: tempPath, override: true)
+        try patchLocalPackageProductDependencyReferences(in: tempPath + "project.pbxproj")
         try? projectPath.delete()
         try tempPath.copy(projectPath)
         try? tempPath.delete()
@@ -52,5 +53,231 @@ public class FileWriter {
         try? path.delete()
         try path.parent().mkpath()
         try path.write(data)
+    }
+
+    private func patchLocalPackageProductDependencyReferences(in pbxprojPath: Path) throws {
+        let localPackagePathsByProductName = localPackagePathsByProductName()
+        guard !localPackagePathsByProductName.isEmpty else { return }
+
+        let pbxproj: String = try pbxprojPath.read()
+        let lines = pbxproj.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let localPackageReferencesByPath = parseLocalPackageReferencesByPath(from: lines)
+        guard !localPackageReferencesByPath.isEmpty else { return }
+
+        var productToLocalPackageReference: [String: String] = [:]
+        for (productName, packagePath) in localPackagePathsByProductName {
+            if let localReference = localPackageReferencesByPath[packagePath] ??
+                localPackageReferencesByPath[Path(packagePath).normalize().string] {
+                productToLocalPackageReference[productName] = localReference
+            }
+        }
+        guard !productToLocalPackageReference.isEmpty else { return }
+
+        var patchedLines: [String] = []
+        patchedLines.reserveCapacity(lines.count)
+
+        var inProductDependencySection = false
+        var productDependencyBlock: [String] = []
+        var didPatch = false
+
+        for line in lines {
+            if line.contains("/* Begin XCSwiftPackageProductDependency section */") {
+                inProductDependencySection = true
+                patchedLines.append(line)
+                continue
+            }
+
+            if line.contains("/* End XCSwiftPackageProductDependency section */") {
+                inProductDependencySection = false
+                if !productDependencyBlock.isEmpty {
+                    let patchedBlock = patchProductDependencyBlock(
+                        productDependencyBlock,
+                        productToLocalPackageReference: productToLocalPackageReference
+                    )
+                    didPatch = didPatch || patchedBlock != productDependencyBlock
+                    patchedLines.append(contentsOf: patchedBlock)
+                    productDependencyBlock.removeAll(keepingCapacity: true)
+                }
+                patchedLines.append(line)
+                continue
+            }
+
+            guard inProductDependencySection else {
+                patchedLines.append(line)
+                continue
+            }
+
+            if !productDependencyBlock.isEmpty || isPBXObjectStart(line) {
+                productDependencyBlock.append(line)
+                if line.trimmingCharacters(in: .whitespacesAndNewlines) == "};" {
+                    let patchedBlock = patchProductDependencyBlock(
+                        productDependencyBlock,
+                        productToLocalPackageReference: productToLocalPackageReference
+                    )
+                    didPatch = didPatch || patchedBlock != productDependencyBlock
+                    patchedLines.append(contentsOf: patchedBlock)
+                    productDependencyBlock.removeAll(keepingCapacity: true)
+                }
+            } else {
+                patchedLines.append(line)
+            }
+        }
+
+        if didPatch {
+            try pbxprojPath.write(patchedLines.joined(separator: "\n"))
+        }
+    }
+
+    private func localPackagePathsByProductName() -> [String: String] {
+        var localPackagePathsByName: [String: String] = [:]
+        for (packageName, package) in project.packages {
+            if case let .local(path, _, excludeFromProject) = package, !excludeFromProject {
+                localPackagePathsByName[packageName] = path
+            }
+        }
+
+        guard !localPackagePathsByName.isEmpty else { return [:] }
+
+        var packagePathsByProductName: [String: Set<String>] = [:]
+
+        func addProduct(_ productName: String, packagePath: String) {
+            packagePathsByProductName[productName, default: []].insert(packagePath)
+        }
+
+        for target in project.targets {
+            for dependency in target.dependencies {
+                guard case let .package(products) = dependency.type,
+                    let packagePath = localPackagePathsByName[dependency.reference] else {
+                    continue
+                }
+
+                if products.isEmpty {
+                    addProduct(dependency.reference, packagePath: packagePath)
+                } else {
+                    for product in products {
+                        addProduct(product, packagePath: packagePath)
+                    }
+                }
+            }
+
+            for plugin in target.buildToolPlugins {
+                guard let packagePath = localPackagePathsByName[plugin.package] else {
+                    continue
+                }
+                addProduct("plugin:\(plugin.plugin)", packagePath: packagePath)
+            }
+        }
+
+        for target in project.aggregateTargets {
+            for plugin in target.buildToolPlugins {
+                guard let packagePath = localPackagePathsByName[plugin.package] else {
+                    continue
+                }
+                addProduct("plugin:\(plugin.plugin)", packagePath: packagePath)
+            }
+        }
+
+        return packagePathsByProductName.compactMapValues { packagePaths in
+            guard packagePaths.count == 1 else { return nil }
+            return packagePaths.first
+        }
+    }
+
+    private func parseLocalPackageReferencesByPath(from lines: [String]) -> [String: String] {
+        var localPackageReferencesByPath: [String: String] = [:]
+        var inLocalPackageReferenceSection = false
+        var currentReference: String?
+        var currentPath: String?
+
+        for line in lines {
+            if line.contains("/* Begin XCLocalSwiftPackageReference section */") {
+                inLocalPackageReferenceSection = true
+                continue
+            }
+
+            if line.contains("/* End XCLocalSwiftPackageReference section */") {
+                inLocalPackageReferenceSection = false
+                currentReference = nil
+                currentPath = nil
+                continue
+            }
+
+            guard inLocalPackageReferenceSection else { continue }
+
+            if let reference = pbxObjectReference(from: line, marker: "XCLocalSwiftPackageReference") {
+                currentReference = reference
+                currentPath = nil
+                continue
+            }
+
+            if let relativePath = pbxAssignedValue(for: "relativePath", in: line) {
+                currentPath = relativePath
+                continue
+            }
+
+            if line.trimmingCharacters(in: .whitespacesAndNewlines) == "};" {
+                if let path = currentPath, let reference = currentReference {
+                    localPackageReferencesByPath[path] = reference
+                }
+                currentReference = nil
+                currentPath = nil
+            }
+        }
+
+        return localPackageReferencesByPath
+    }
+
+    private func patchProductDependencyBlock(
+        _ block: [String],
+        productToLocalPackageReference: [String: String]
+    ) -> [String] {
+        guard !block.isEmpty else { return block }
+        guard !block.contains(where: { $0.contains("package = ") }) else { return block }
+
+        guard let productNameLine = block.first(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("productName = ") }),
+            let productName = pbxAssignedValue(for: "productName", in: productNameLine),
+            let localPackageReference = productToLocalPackageReference[productName] else {
+            return block
+        }
+
+        guard let isaIndex = block.firstIndex(where: {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines) == "isa = XCSwiftPackageProductDependency;"
+        }) else {
+            return block
+        }
+
+        let indentation = String(block[isaIndex].prefix(while: { $0 == " " || $0 == "\t" }))
+        var patchedBlock = block
+        patchedBlock.insert("\(indentation)package = \(localPackageReference);", at: isaIndex + 1)
+        return patchedBlock
+    }
+
+    private func isPBXObjectStart(_ line: String) -> Bool {
+        line.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("= {")
+    }
+
+    private func pbxObjectReference(from line: String, marker: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let range = trimmed.range(of: "= {", options: .backwards), trimmed.contains(marker) else {
+            return nil
+        }
+        return String(trimmed[..<range.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private func pbxAssignedValue(for key: String, in line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix = "\(key) = "
+        guard trimmed.hasPrefix(prefix), trimmed.hasSuffix(";") else { return nil }
+
+        let valueStart = trimmed.index(trimmed.startIndex, offsetBy: prefix.count)
+        let valueEnd = trimmed.index(before: trimmed.endIndex)
+        let rawValue = String(trimmed[valueStart..<valueEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if rawValue.hasPrefix("\""), rawValue.hasSuffix("\""), rawValue.count >= 2 {
+            let innerStart = rawValue.index(after: rawValue.startIndex)
+            let innerEnd = rawValue.index(before: rawValue.endIndex)
+            return String(rawValue[innerStart..<innerEnd]).replacingOccurrences(of: "\\\"", with: "\"")
+        }
+        return rawValue
     }
 }

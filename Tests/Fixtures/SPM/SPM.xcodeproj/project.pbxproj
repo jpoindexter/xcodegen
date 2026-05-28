@@ -75,11 +75,11 @@
 		464ACF8D8F2D9F219BCFD3E7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		4E22B8BCC18A29EFE1DE3BE4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		61C17B77601A9D1B7895AB42 /* StaticLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StaticLibrary.swift; sourceTree = "<group>"; };
+		72EEB41C0E205F1266A21151 /* xcodegen */ = {isa = PBXFileReference; lastKnownFileType = folder; name = xcodegen; path = ../../..; sourceTree = SOURCE_ROOT; };
 		7970A2253B14A9B27C307FAC /* SPMTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SPMTests.swift; sourceTree = "<group>"; };
 		979AE1767E2AF6B3B9D7F13D /* FooFeature */ = {isa = PBXFileReference; lastKnownFileType = folder; name = FooFeature; path = FooFeature; sourceTree = SOURCE_ROOT; };
 		A9601593D0AD02931266A4E5 /* App.xctestplan */ = {isa = PBXFileReference; path = App.xctestplan; sourceTree = "<group>"; };
 		CAB5625F6FEA668410ED5482 /* libStaticLibrary.a */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = archive.ar; path = libStaticLibrary.a; sourceTree = BUILT_PRODUCTS_DIR; };
-		ED284AB7C13DCC0A95DAA680 /* XcodeGen */ = {isa = PBXFileReference; lastKnownFileType = folder; name = XcodeGen; path = ../../..; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -107,7 +107,7 @@
 				26F7EFEE613987D1E1258A60 /* AppDelegate.swift */,
 				4E22B8BCC18A29EFE1DE3BE4 /* Assets.xcassets */,
 				464ACF8D8F2D9F219BCFD3E7 /* Info.plist */,
-				ED284AB7C13DCC0A95DAA680 /* XcodeGen */,
+				72EEB41C0E205F1266A21151 /* xcodegen */,
 			);
 			path = SPM;
 			sourceTree = "<group>";
@@ -701,6 +701,7 @@
 		};
 		15DB49096E2978F6BCA8D604 /* FooUI */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = 630A8CE9F2BE39704ED9D461 /* XCLocalSwiftPackageReference "FooFeature" */;
 			productName = FooUI;
 		};
 		16E6FE01D5BD99F78D4A17E2 /* Codability */ = {
@@ -710,14 +711,17 @@
 		};
 		5A36E2FE69703FCAC0BE8064 /* XcodeGen */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = C6539B364583AE96C18CE377 /* XCLocalSwiftPackageReference "../../.." */;
 			productName = XcodeGen;
 		};
 		6B8A6E1EA485E607A1D1DCD1 /* FooDomain */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = 630A8CE9F2BE39704ED9D461 /* XCLocalSwiftPackageReference "FooFeature" */;
 			productName = FooDomain;
 		};
 		6F7DEA2D82649EDF903FBDBD /* XcodeGen */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = C6539B364583AE96C18CE377 /* XCLocalSwiftPackageReference "../../.." */;
 			productName = XcodeGen;
 		};
 		896D1E2063A93D40F04D7864 /* PrefirePlaybookPlugin */ = {
@@ -727,10 +731,12 @@
 		};
 		8D2DC638BEF7FDF23907E134 /* FooDomain */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = 630A8CE9F2BE39704ED9D461 /* XCLocalSwiftPackageReference "FooFeature" */;
 			productName = FooDomain;
 		};
 		927CB19D94339CC9960E930C /* FooUI */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = 630A8CE9F2BE39704ED9D461 /* XCLocalSwiftPackageReference "FooFeature" */;
 			productName = FooUI;
 		};
 		AF233B61592982A7F6431FC6 /* Codability */ = {

@@ -1972,6 +1972,90 @@ class ProjectGeneratorTests: XCTestCase {
                 try expect(productNames).contains { $0 == "FooDomain" }
                 try expect(productNames).contains { $0 == "FooUI" }
             }
+
+            $0.it("writes local swift package dependencies with package references") {
+                let app = Target(
+                    name: "MyApp",
+                    type: .application,
+                    platform: .iOS,
+                    dependencies: [
+                        Dependency(type: .package(products: ["FooDomain", "FooUI"]), reference: "FooFeature")
+                    ]
+                )
+
+                let project = Project(name: "test", targets: [app], packages: [
+                    "FooFeature": .local(path: "../FooFeature", group: nil, excludeFromProject: false)
+                ])
+
+                let projectPath = try Path.processUniqueTemporary() + "LocalPackageReferences.xcodeproj"
+                defer { try? projectPath.delete() }
+
+                let generator = ProjectGenerator(project: project)
+                let xcodeProject = try generator.generateXcodeProject(userName: "someUser")
+                let writer = FileWriter(project: project)
+                try writer.writeXcodeProject(xcodeProject, to: projectPath)
+
+                let pbxprojPath = projectPath + "project.pbxproj"
+                let pbxproj: String = try pbxprojPath.read()
+
+                func dependencyBlock(for productName: String) -> String? {
+                    let marker = "/* \(productName) */ = {"
+                    guard let start = pbxproj.range(of: marker),
+                        let end = pbxproj[start.lowerBound...].range(of: "\n\t\t};") else {
+                        return nil
+                    }
+                    return String(pbxproj[start.lowerBound..<end.upperBound])
+                }
+
+                let fooDomainBlock = dependencyBlock(for: "FooDomain")
+                let fooUIBlock = dependencyBlock(for: "FooUI")
+
+                try expect(fooDomainBlock != nil).to.beTrue()
+                try expect(fooUIBlock != nil).to.beTrue()
+                try expect(fooDomainBlock?.contains("package = ")).to.beTrue()
+                try expect(fooUIBlock?.contains("package = ")).to.beTrue()
+                try expect(fooDomainBlock?.contains("XCLocalSwiftPackageReference \"../FooFeature\"")).to.beTrue()
+                try expect(fooUIBlock?.contains("XCLocalSwiftPackageReference \"../FooFeature\"")).to.beTrue()
+            }
+
+            $0.it("writes local build tool plugin dependencies with package references") {
+                let app = Target(
+                    name: "MyApp",
+                    type: .application,
+                    platform: .iOS,
+                    buildToolPlugins: [BuildToolPlugin(plugin: "FooPlugin", package: "FooFeature")]
+                )
+
+                let project = Project(name: "test", targets: [app], packages: [
+                    "FooFeature": .local(path: "../FooFeature", group: nil, excludeFromProject: false)
+                ])
+
+                let projectPath = try Path.processUniqueTemporary() + "LocalPluginReferences.xcodeproj"
+                defer { try? projectPath.delete() }
+
+                let generator = ProjectGenerator(project: project)
+                let xcodeProject = try generator.generateXcodeProject(userName: "someUser")
+                let writer = FileWriter(project: project)
+                try writer.writeXcodeProject(xcodeProject, to: projectPath)
+
+                let pbxprojPath = projectPath + "project.pbxproj"
+                let pbxproj: String = try pbxprojPath.read()
+
+                func dependencyBlock(for commentName: String) -> String? {
+                    let marker = "/* \(commentName) */ = {"
+                    guard let start = pbxproj.range(of: marker),
+                        let end = pbxproj[start.lowerBound...].range(of: "\n\t\t};") else {
+                        return nil
+                    }
+                    return String(pbxproj[start.lowerBound..<end.upperBound])
+                }
+
+                let pluginBlock = dependencyBlock(for: "FooPlugin")
+                try expect(pluginBlock != nil).to.beTrue()
+                try expect(pluginBlock?.contains("productName = \"plugin:FooPlugin\";")).to.beTrue()
+                try expect(pluginBlock?.contains("package = ")).to.beTrue()
+                try expect(pluginBlock?.contains("XCLocalSwiftPackageReference \"../FooFeature\"")).to.beTrue()
+            }
         }
     }
 
