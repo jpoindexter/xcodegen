@@ -553,6 +553,44 @@ class ProjectGeneratorTests: XCTestCase {
                 try expect(targetConfig.buildSettings["TARGETED_DEVICE_FAMILY"]).beNil()
             }
 
+            $0.it("applies swift 6.1 concurrency defaults") {
+                let target = Target(
+                    name: "Target",
+                    type: .application,
+                    platform: .iOS,
+                    settings: Settings(buildSettings: [
+                        "SWIFT_VERSION": "6.1",
+                    ])
+                )
+                let project = Project(name: "", targets: [target])
+
+                let pbxProject = try project.generatePbxProj()
+                let targetConfig = try unwrap(pbxProject.nativeTargets.first?.buildConfigurationList?.buildConfigurations.first)
+
+                try expect(targetConfig.buildSettings["SWIFT_UPCOMING_FEATURE_6_0"]?.stringValue) == "YES"
+                try expect(targetConfig.buildSettings["SWIFT_STRICT_CONCURRENCY_DEFAULT"]?.stringValue) == "complete"
+            }
+
+            $0.it("does not override explicit swift concurrency settings") {
+                let target = Target(
+                    name: "Target",
+                    type: .application,
+                    platform: .iOS,
+                    settings: Settings(buildSettings: [
+                        "SWIFT_VERSION": "6.1",
+                        "SWIFT_UPCOMING_FEATURE_6_0": "NO",
+                        "SWIFT_STRICT_CONCURRENCY_DEFAULT": "minimal",
+                    ])
+                )
+                let project = Project(name: "", targets: [target])
+
+                let pbxProject = try project.generatePbxProj()
+                let targetConfig = try unwrap(pbxProject.nativeTargets.first?.buildConfigurationList?.buildConfigurations.first)
+
+                try expect(targetConfig.buildSettings["SWIFT_UPCOMING_FEATURE_6_0"]?.stringValue) == "NO"
+                try expect(targetConfig.buildSettings["SWIFT_STRICT_CONCURRENCY_DEFAULT"]?.stringValue) == "minimal"
+            }
+
             $0.it("generates dependencies") {
                 let pbxProject = try project.generatePbxProj()
 
@@ -2017,12 +2055,17 @@ class ProjectGeneratorTests: XCTestCase {
                 let pbxproj: String = try pbxprojPath.read()
 
                 func dependencyBlock(for productName: String) -> String? {
-                    let marker = "/* \(productName) */ = {"
-                    guard let start = pbxproj.range(of: marker),
-                        let end = pbxproj[start.lowerBound...].range(of: "\n\t\t};") else {
+                    guard let sectionStart = pbxproj.range(of: "/* Begin XCSwiftPackageProductDependency section */"),
+                        let sectionEnd = pbxproj.range(of: "/* End XCSwiftPackageProductDependency section */") else {
                         return nil
                     }
-                    return String(pbxproj[start.lowerBound..<end.upperBound])
+                    let section = String(pbxproj[sectionStart.lowerBound..<sectionEnd.upperBound])
+                    let marker = "/* \(productName) */ = {"
+                    guard let start = section.range(of: marker),
+                        let end = section[start.lowerBound...].range(of: "\n\t\t};") else {
+                        return nil
+                    }
+                    return String(section[start.lowerBound..<end.upperBound])
                 }
 
                 let fooDomainBlock = dependencyBlock(for: "FooDomain")
@@ -2060,12 +2103,17 @@ class ProjectGeneratorTests: XCTestCase {
                 let pbxproj: String = try pbxprojPath.read()
 
                 func dependencyBlock(for commentName: String) -> String? {
-                    let marker = "/* \(commentName) */ = {"
-                    guard let start = pbxproj.range(of: marker),
-                        let end = pbxproj[start.lowerBound...].range(of: "\n\t\t};") else {
+                    guard let sectionStart = pbxproj.range(of: "/* Begin XCSwiftPackageProductDependency section */"),
+                        let sectionEnd = pbxproj.range(of: "/* End XCSwiftPackageProductDependency section */") else {
                         return nil
                     }
-                    return String(pbxproj[start.lowerBound..<end.upperBound])
+                    let section = String(pbxproj[sectionStart.lowerBound..<sectionEnd.upperBound])
+                    let marker = "/* \(commentName) */ = {"
+                    guard let start = section.range(of: marker),
+                        let end = section[start.lowerBound...].range(of: "\n\t\t};") else {
+                        return nil
+                    }
+                    return String(section[start.lowerBound..<end.upperBound])
                 }
 
                 let pluginBlock = dependencyBlock(for: "FooPlugin")
@@ -2144,6 +2192,57 @@ class ProjectGeneratorTests: XCTestCase {
 
                     let localPackageReference = try unwrap(generatedProject.pbxproj.rootObject?.localPackages.first)
                     try expect(localPackageReference.relativePath) == "paths_test/relative_local_package/LocalPackage"
+                }
+
+                $0.it("writes local package dependencies with package references for destination generation") {
+                    let projectBasePath = fixturePath + "paths_test/relative_local_package"
+                    let destinationPath = fixturePath
+                    let app = Target(
+                        name: "App",
+                        type: .application,
+                        platform: .iOS,
+                        dependencies: [
+                            Dependency(type: .package(products: ["LocalPackage"]), reference: "LocalPackage"),
+                        ]
+                    )
+                    let project = Project(
+                        basePath: projectBasePath,
+                        name: "test",
+                        targets: [app],
+                        packages: [
+                            "LocalPackage": .local(path: "LocalPackage", group: nil, excludeFromProject: false),
+                        ]
+                    )
+
+                    let outputProjectPath = destinationPath + "LocalPackageDestinationWrite.xcodeproj"
+                    defer { try? outputProjectPath.delete() }
+
+                    let generator = ProjectGenerator(project: project)
+                    let xcodeProject = try generator.generateXcodeProject(in: destinationPath, userName: "someUser")
+                    let writer = FileWriter(project: project)
+                    try writer.writeXcodeProject(xcodeProject, to: outputProjectPath)
+
+                    let pbxprojPath = outputProjectPath + "project.pbxproj"
+                    let pbxproj: String = try pbxprojPath.read()
+
+                    func dependencyBlock(for commentName: String) -> String? {
+                        guard let sectionStart = pbxproj.range(of: "/* Begin XCSwiftPackageProductDependency section */"),
+                            let sectionEnd = pbxproj.range(of: "/* End XCSwiftPackageProductDependency section */") else {
+                            return nil
+                        }
+                        let section = String(pbxproj[sectionStart.lowerBound..<sectionEnd.upperBound])
+                        let marker = "/* \(commentName) */ = {"
+                        guard let start = section.range(of: marker),
+                            let end = section[start.lowerBound...].range(of: "\n\t\t};") else {
+                            return nil
+                        }
+                        return String(section[start.lowerBound..<end.upperBound])
+                    }
+
+                    let localPackageBlock = dependencyBlock(for: "LocalPackage")
+                    try expect(localPackageBlock != nil).to.beTrue()
+                    try expect(localPackageBlock?.contains("package = ")).to.beTrue()
+                    try expect(localPackageBlock?.contains("XCLocalSwiftPackageReference \"paths_test/relative_local_package/LocalPackage\"")).to.beTrue()
                 }
             }
 

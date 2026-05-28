@@ -19,7 +19,10 @@ public class FileWriter {
             try projectPath.copy(tempPath)
         }
         try xcodeProject.write(path: tempPath, override: true)
-        try patchLocalPackageProductDependencyReferences(in: tempPath + "project.pbxproj")
+        try patchLocalPackageProductDependencyReferences(
+            in: tempPath + "project.pbxproj",
+            generatedProjectPath: projectPath
+        )
         try? projectPath.delete()
         try tempPath.copy(projectPath)
         try? tempPath.delete()
@@ -55,19 +58,39 @@ public class FileWriter {
         try path.write(data)
     }
 
-    private func patchLocalPackageProductDependencyReferences(in pbxprojPath: Path) throws {
-        let localPackagePathsByProductName = localPackagePathsByProductName()
-        guard !localPackagePathsByProductName.isEmpty else { return }
+    private func patchLocalPackageProductDependencyReferences(
+        in pbxprojPath: Path,
+        generatedProjectPath: Path
+    ) throws {
+        let localPackageAbsolutePathsByProductName = localPackageAbsolutePathsByProductName()
+        guard !localPackageAbsolutePathsByProductName.isEmpty else { return }
 
         let pbxproj: String = try pbxprojPath.read()
         let lines = pbxproj.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         let localPackageReferencesByPath = parseLocalPackageReferencesByPath(from: lines)
         guard !localPackageReferencesByPath.isEmpty else { return }
 
+        let xcodeprojDirectory = pbxprojPath.parent()
+        let generatedProjectDirectory = generatedProjectPath.parent()
+        let projectBasePath = project.basePath.absolute().normalize()
         var productToLocalPackageReference: [String: String] = [:]
-        for (productName, packagePath) in localPackagePathsByProductName {
-            if let localReference = localPackageReferencesByPath[packagePath] ??
-                localPackageReferencesByPath[Path(packagePath).normalize().string] {
+        for (productName, absolutePackagePath) in localPackageAbsolutePathsByProductName {
+            let relativeToProjectPath = (try? absolutePackagePath.relativePath(from: projectBasePath).string)
+            let relativeToGeneratedProjectPath = (try? absolutePackagePath.relativePath(from: generatedProjectDirectory).string)
+            let relativeToXcodeprojPath = (try? absolutePackagePath.relativePath(from: xcodeprojDirectory).string)
+
+            let pathCandidates = [
+                relativeToProjectPath,
+                relativeToProjectPath.map { Path($0).normalize().string },
+                relativeToGeneratedProjectPath,
+                relativeToGeneratedProjectPath.map { Path($0).normalize().string },
+                relativeToXcodeprojPath,
+                relativeToXcodeprojPath.map { Path($0).normalize().string },
+                absolutePackagePath.string,
+                absolutePackagePath.normalize().string,
+            ].compactMap { $0 }
+
+            if let localReference = pathCandidates.lazy.compactMap({ localPackageReferencesByPath[$0] }).first {
                 productToLocalPackageReference[productName] = localReference
             }
         }
@@ -128,26 +151,26 @@ public class FileWriter {
         }
     }
 
-    private func localPackagePathsByProductName() -> [String: String] {
-        var localPackagePathsByName: [String: String] = [:]
+    private func localPackageAbsolutePathsByProductName() -> [String: Path] {
+        var localPackageAbsolutePathsByName: [String: Path] = [:]
         for (packageName, package) in project.packages {
             if case let .local(path, _, excludeFromProject) = package, !excludeFromProject {
-                localPackagePathsByName[packageName] = path
+                localPackageAbsolutePathsByName[packageName] = (project.basePath + Path(path).normalize()).absolute().normalize()
             }
         }
 
-        guard !localPackagePathsByName.isEmpty else { return [:] }
+        guard !localPackageAbsolutePathsByName.isEmpty else { return [:] }
 
-        var packagePathsByProductName: [String: Set<String>] = [:]
+        var packagePathsByProductName: [String: Set<Path>] = [:]
 
-        func addProduct(_ productName: String, packagePath: String) {
+        func addProduct(_ productName: String, packagePath: Path) {
             packagePathsByProductName[productName, default: []].insert(packagePath)
         }
 
         for target in project.targets {
             for dependency in target.dependencies {
                 guard case let .package(products) = dependency.type,
-                    let packagePath = localPackagePathsByName[dependency.reference] else {
+                    let packagePath = localPackageAbsolutePathsByName[dependency.reference] else {
                     continue
                 }
 
@@ -161,7 +184,7 @@ public class FileWriter {
             }
 
             for plugin in target.buildToolPlugins {
-                guard let packagePath = localPackagePathsByName[plugin.package] else {
+                guard let packagePath = localPackageAbsolutePathsByName[plugin.package] else {
                     continue
                 }
                 addProduct("plugin:\(plugin.plugin)", packagePath: packagePath)
@@ -170,7 +193,7 @@ public class FileWriter {
 
         for target in project.aggregateTargets {
             for plugin in target.buildToolPlugins {
-                guard let packagePath = localPackagePathsByName[plugin.package] else {
+                guard let packagePath = localPackageAbsolutePathsByName[plugin.package] else {
                     continue
                 }
                 addProduct("plugin:\(plugin.plugin)", packagePath: packagePath)
