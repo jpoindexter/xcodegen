@@ -624,6 +624,24 @@ class SpecLoadingTests: XCTestCase {
                 
                 try expect(project.targets) == [target]
             }
+
+            $0.it("parses deploymentTarget dictionary with supported destinations") {
+                let targetDictionary: [String: Any] = [
+                    "type": "application",
+                    "supportedDestinations": ["iOS", "macOS"],
+                    "deploymentTarget": [
+                        "iOS": "18.0",
+                        "macOS": "15.0",
+                    ],
+                ]
+
+                let project = try getProjectSpec(["targets": ["App": targetDictionary]])
+                let target = try unwrap(project.targets.first)
+
+                try expect(target.platform) == .auto
+                try expect(target.deploymentTarget).beNil()
+                try expect(target.deploymentTargets) == DeploymentTarget(iOS: "18.0", macOS: "15.0")
+            }
             
             $0.it("parses no platform fails if we are not using supported destinations") {
                 let expectedError = SpecParsingError.unknownTargetPlatform("")

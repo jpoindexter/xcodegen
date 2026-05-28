@@ -55,6 +55,7 @@ public struct Target: ProjectTarget {
     public var scheme: TargetScheme?
     public var legacy: LegacyTarget?
     public var deploymentTarget: Version?
+    public var deploymentTargets: DeploymentTarget?
     public var attributes: [String: Any]
     public var productName: String
     public var onlyCopyFilesOnInstall: Bool
@@ -82,6 +83,7 @@ public struct Target: ProjectTarget {
         supportedDestinations: [SupportedDestination]? = nil,
         productName: String? = nil,
         deploymentTarget: Version? = nil,
+        deploymentTargets: DeploymentTarget? = nil,
         settings: Settings = .empty,
         configFiles: [String: String] = [:],
         sources: [TargetSource] = [],
@@ -107,6 +109,7 @@ public struct Target: ProjectTarget {
         self.platform = platform
         self.supportedDestinations = supportedDestinations
         self.deploymentTarget = deploymentTarget
+        self.deploymentTargets = deploymentTargets
         self.productName = productName ?? name
         self.settings = settings
         self.configFiles = configFiles
@@ -221,6 +224,7 @@ extension Target: Equatable {
             lhs.type == rhs.type &&
             lhs.platform == rhs.platform &&
             lhs.deploymentTarget == rhs.deploymentTarget &&
+            lhs.deploymentTargets == rhs.deploymentTargets &&
             lhs.transitivelyLinkDependencies == rhs.transitivelyLinkDependencies &&
             lhs.requiresObjCLinking == rhs.requiresObjCLinking &&
             lhs.directlyEmbedCarthageDependencies == rhs.directlyEmbedCarthageDependencies &&
@@ -310,10 +314,16 @@ extension Target: NamedJSONDictionaryConvertible {
         
         if let string: String = jsonDictionary.json(atKeyPath: "deploymentTarget") {
             deploymentTarget = try Version.parse(string)
+            deploymentTargets = nil
         } else if let double: Double = jsonDictionary.json(atKeyPath: "deploymentTarget") {
             deploymentTarget = try Version.parse(String(double))
+            deploymentTargets = nil
+        } else if let targets: DeploymentTarget = jsonDictionary.json(atKeyPath: "deploymentTarget") {
+            deploymentTarget = nil
+            deploymentTargets = targets
         } else {
             deploymentTarget = nil
+            deploymentTargets = nil
         }
 
         settings = try BuildSettingsParser(jsonDictionary: jsonDictionary).parse()
@@ -389,7 +399,6 @@ extension Target: JSONEncodable {
             "buildToolPlugins": buildToolPlugins.map { $0.toJSONValue() },
             "postbuildScripts": postBuildScripts.map { $0.toJSONValue() },
             "buildRules": buildRules.map { $0.toJSONValue() },
-            "deploymentTarget": deploymentTarget?.deploymentTarget,
             "info": info?.toJSONValue(),
             "entitlements": entitlements?.toJSONValue(),
             "transitivelyLinkDependencies": transitivelyLinkDependencies,
@@ -398,6 +407,12 @@ extension Target: JSONEncodable {
             "scheme": scheme?.toJSONValue(),
             "legacy": legacy?.toJSONValue(),
         ]
+
+        if let deploymentTargets {
+            dict["deploymentTarget"] = deploymentTargets.toJSONValue()
+        } else {
+            dict["deploymentTarget"] = deploymentTarget?.deploymentTarget
+        }
 
         if productName != name {
             dict["productName"] = productName

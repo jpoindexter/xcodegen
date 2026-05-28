@@ -1295,15 +1295,25 @@ public class PBXProjGenerator {
         }
         
         if !copyWatchReferences.isEmpty {
-
-            let copyFilesPhase = addObject(
-                PBXCopyFilesBuildPhase(
-                    dstPath: "$(CONTENTS_FOLDER_PATH)/Watch",
-                    dstSubfolderSpec: .productsDirectory,
-                    name: "Embed Watch Content",
-                    files: copyWatchReferences
+            let copyFilesPhase: PBXCopyFilesBuildPhase
+            if project.objectVersion >= ProjectFormat.xcode26_3.objectVersion {
+                copyFilesPhase = addObject(
+                    getPBXCopyFilesBuildPhase(
+                        dstSubfolderSpec: .plugins,
+                        name: "Embed Watch Content",
+                        files: copyWatchReferences
+                    )
                 )
-            )
+            } else {
+                copyFilesPhase = addObject(
+                    PBXCopyFilesBuildPhase(
+                        dstPath: "$(CONTENTS_FOLDER_PATH)/Watch",
+                        dstSubfolderSpec: .productsDirectory,
+                        name: "Embed Watch Content",
+                        files: copyWatchReferences
+                    )
+                )
+            }
 
             buildPhases.append(copyFilesPhase)
         }

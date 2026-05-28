@@ -516,6 +516,28 @@ class ProjectGeneratorTests: XCTestCase {
                 try expect(targetConfig1.buildSettings["SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD"]?.boolValue) == false
             }
 
+            $0.it("supportedDestinations applies per-platform deploymentTarget dictionary") {
+                let targetDictionary: [String: Any] = [
+                    "type": "application",
+                    "platform": "auto",
+                    "supportedDestinations": ["macOS", "iOS"],
+                    "deploymentTarget": [
+                        "macOS": "15.0",
+                        "iOS": "18.0",
+                    ],
+                ]
+                let project = try Project(jsonDictionary: [
+                    "name": "test",
+                    "targets": ["Target": targetDictionary],
+                ])
+
+                let pbxProject = try project.generatePbxProj()
+                let targetConfig = try unwrap(pbxProject.nativeTargets.first?.buildConfigurationList?.buildConfigurations.first)
+
+                try expect(targetConfig.buildSettings["MACOSX_DEPLOYMENT_TARGET"]?.stringValue) == "15.0"
+                try expect(targetConfig.buildSettings["IPHONEOS_DEPLOYMENT_TARGET"]?.stringValue) == "18.0"
+            }
+
             $0.it("supportedDestinations respects settingPresets none") {
                 let target = Target(name: "Target", type: .application, platform: .auto, supportedDestinations: [.iOS, .macOS])
                 let options = SpecOptions(settingPresets: .none)
@@ -2262,19 +2284,26 @@ class ProjectGeneratorTests: XCTestCase {
         
         describe("generateXcodeProject") {
             
-            func generateProjectForApp(withDependencies: [Dependency], targets: [Target], packages: [String: SwiftPackage] = [:]) throws -> PBXProj {
+            func generateProjectForApp(
+                withDependencies: [Dependency],
+                targets: [Target],
+                packages: [String: SwiftPackage] = [:],
+                appPlatform: Platform = .macOS,
+                options: SpecOptions = .init()
+            ) throws -> PBXProj {
                 
                 let app = Target(
                     name: "App",
                     type: .application,
-                    platform: .macOS,
+                    platform: appPlatform,
                     dependencies: withDependencies
                 )
                 
                 let project = Project(
                     name: "test",
                     targets: targets + [app],
-                    packages: packages
+                    packages: packages,
+                    options: options
                 )
 
                 return try project.generatePbxProj()
@@ -2300,6 +2329,34 @@ class ProjectGeneratorTests: XCTestCase {
             }
             
             $0.context("with target dependencies") {
+                $0.it("embeds watch apps into PlugIns for xcode26_3") {
+                    let watchApp = Target(name: "watchApp", type: .application, platform: .watchOS)
+                    let dependencies = [Dependency(type: .target, reference: watchApp.name, embed: true)]
+
+                    let pbxProject = try generateProjectForApp(
+                        withDependencies: dependencies,
+                        targets: [watchApp],
+                        appPlatform: .iOS,
+                        options: .init(projectFormat: "xcode26_3")
+                    )
+
+                    try expectCopyPhase(in: pbxProject, withFilePaths: ["watchApp.app"], toSubFolder: .plugins, dstPath: "")
+                }
+
+                $0.it("keeps Watch destination for pre-xcode26 formats") {
+                    let watchApp = Target(name: "watchApp", type: .application, platform: .watchOS)
+                    let dependencies = [Dependency(type: .target, reference: watchApp.name, embed: true)]
+
+                    let pbxProject = try generateProjectForApp(
+                        withDependencies: dependencies,
+                        targets: [watchApp],
+                        appPlatform: .iOS,
+                        options: .init(projectFormat: "xcode16_3")
+                    )
+
+                    try expectCopyPhase(in: pbxProject, withFilePaths: ["watchApp.app"], toSubFolder: .productsDirectory, dstPath: "$(CONTENTS_FOLDER_PATH)/Watch")
+                }
+
                 $0.context("application") {
                     
                     let appA = Target(

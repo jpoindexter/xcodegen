@@ -84,6 +84,19 @@ class SourceGeneratorTests: XCTestCase {
                 try pbxProj.expectFile(paths: ["Sources", "A", "C2.0", "c.swift"], buildPhase: .sources)
             }
 
+            $0.it("treats .icon directories as single resources") {
+                _ = try createFile(at: Path("Sources/AppIcon.icon/icon.json"), content: "{}")
+                _ = try createFile(at: Path("Sources/AppIcon.icon/sample.svg"), content: "<svg/>")
+
+                let target = Target(name: "Test", type: .application, platform: .iOS, sources: ["Sources"])
+                let project = Project(basePath: directoryPath, name: "Test", targets: [target])
+
+                let pbxProj = try project.generatePbxProj()
+                try pbxProj.expectFile(paths: ["Sources", "AppIcon.icon"], buildPhase: .resources)
+                try pbxProj.expectFileMissing(paths: ["Sources", "AppIcon.icon", "icon.json"])
+                try pbxProj.expectFileMissing(paths: ["Sources", "AppIcon.icon", "sample.svg"])
+            }
+
             $0.it("generates synced folder") {
                 let directories = """
                 Sources:

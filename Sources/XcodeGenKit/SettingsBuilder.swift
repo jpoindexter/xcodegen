@@ -88,7 +88,22 @@ extension Project {
         }
         
         // apply custom platform version
-        if let version = target.deploymentTarget {
+        if let versions = target.deploymentTargets {
+            if !specSupportedDestinations.isEmpty {
+                for supportedDestination in specSupportedDestinations {
+                    if let platform = Platform(rawValue: supportedDestination.rawValue),
+                       let version = versions.version(for: platform) {
+                        buildSettings[platform.deploymentTargetSetting] = .string(version.deploymentTarget)
+                    }
+                }
+            } else {
+                for platform in Platform.allCases where platform != .auto {
+                    if let version = versions.version(for: platform) {
+                        buildSettings[platform.deploymentTargetSetting] = .string(version.deploymentTarget)
+                    }
+                }
+            }
+        } else if let version = target.deploymentTarget {
             if !specSupportedDestinations.isEmpty {
                 for supportedDestination in specSupportedDestinations {
                     if let platform = Platform(rawValue: supportedDestination.rawValue) {

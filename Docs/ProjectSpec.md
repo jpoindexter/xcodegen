@@ -371,6 +371,7 @@ Settings are merged in the following order: `groups`, `base`, `configs` (simple 
 - [x] **platform**: **[Platform](#platform)** - Platform of the target
 - [ ] **supportedDestinations**: **[[Supported Destinations](#supported-destinations)]** - List of supported platform destinations for the target.
 - [ ] **deploymentTarget**: **String** - The deployment target (eg `9.2`). If this is not specified the value from the project set in [Options](#options)`.deploymentTarget.PLATFORM` will be used.
+  - When using [Supported Destinations](#supported-destinations), this can also be a map of platform versions such as `{ iOS: 18.0, macOS: 15.0 }`.
 - [ ] **sources**: **[Sources](#sources)** - Source directories of the target
 - [ ] **configFiles**: **[Config Files](#config-files)** - `.xcconfig` files per config
 - [ ] **settings**: **[Settings](#settings)** - Target specific build settings. Default platform and product type settings will be applied first before any custom settings defined here. Other context dependant settings will be set automatically as well:
